@@ -1,11 +1,15 @@
 var https = require('https');
 var http = require('http');
 var orgs = require('./orgs.json');
+var config = require('./config.js');
 
 var org = "christo4ferris";
 var repo = "dwostats";
 var stack = []; 
 var timer = null;
+
+var agent;
+var token;
 
 var optionsdb = {
   hostname: '127.0.0.1',
@@ -20,8 +24,6 @@ optionsdb.agent = a;
 var options = {
   hostname: 'api.github.com',
   port: 443,
-  headers: {'User-Agent': 'christo4ferris',
-  'Authorization': 'token tok'},
   method: 'GET'
 };
 
@@ -170,6 +172,10 @@ function get_repos(response) {
 };
 
 if (orgs.length >= 1) {
+    options.headers = {};
+    options.headers.Authorization = new String("token " + config.auth.secret);
+    options.headers["User-Agent"] = config.auth.clientid;
+
     orgs.forEach(function(item) {
 	var t = new Object();
         if(item.type == "org") {
