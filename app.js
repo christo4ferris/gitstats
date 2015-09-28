@@ -21,7 +21,7 @@ var options = {
   hostname: 'api.github.com',
   port: 443,
   headers: {'User-Agent': 'christo4ferris',
-  'Authorization': 'token 82e9c68ccacc7f163e5d38e0a029aed060198b27'},
+  'Authorization': 'token tok'},
   method: 'GET'
 };
 
