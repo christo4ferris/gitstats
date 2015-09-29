@@ -26,6 +26,9 @@ var options = {
   port: 443,
   method: 'GET'
 };
+options.headers = {};
+options.headers.Authorization = new String("token " + config.auth.secret);
+options.headers["User-Agent"] = config.auth.clientid;
 
 Date.prototype.getWeekNo = function(){
     var d = new Date(+this);
@@ -64,9 +67,28 @@ function process() {
 function throttle(item) {
     stack.push(item);
     if (timer === null) {
-        timer = setInterval(process, 5000);
+        timer = setInterval(process, 2100);
     };
 };
+
+function parse_link_header(header) {
+    if (header.length === 0) {
+            throw new Error("input must not be of zero length");
+        }
+
+    var parts = header.split(',');
+    var links = {};
+    for(var i=0; i<parts.length; i++) {
+        var section = parts[i].split(';');
+        if (section.length !== 2) {
+            throw new Error("section could not be split on ';'");
+        }
+        var url = section[0].replace(/<(.*)>/, '$1').trim();
+        var name = section[1].replace(/rel="(.*)"/, '$1').trim();
+        links[name] = url;
+    }
+    return links;
+}
 
 function get_commits(response) {
     var body = '';
@@ -75,15 +97,17 @@ function get_commits(response) {
         console.log("headers: ", response.headers);
         return; 
     };
-    //console.log("get_commits statusCode: ", response.statusCode);
     if (has(response.headers, 'link')) {
-	var t = new Object();
-	t.func = get_commits;
-	var link = response.headers.link;
-	options.path = link.substring(23, link.indexOf('>'));
-	console.log("process repo: " + options.path);
-	t.opts = clone(options);
-	throttle(t);
+	var links = parse_link_header(response.headers.link);
+	if (links["next"] != null) {
+	    var t = new Object();
+	    t.func = get_commits;
+	    t.opts = clone(options);
+	    t.opts.path = links["next"].substring(22, links["next"].length);
+	    throttle(t);
+	    console.log(response.headers.link);
+	    console.log("get_commits: " + t.opts.path)
+	}
     };
     response.on('error', function(e) {
         console.error(e);
@@ -118,14 +142,12 @@ function get_commits(response) {
 	        date.setDate(doc.date);
 	        doc.week = date.getWeekNo();
 	        doc.url = item.url;
-	    //console.log(JSON.stringify(doc));
 	        var db = http.request(optionsdb, insertdb);
 	        db.write(JSON.stringify(doc));
 	        db.end();
 	    }
 	    catch (err) {
 		    console.log(err);
-		    console.log(JSON.stringify(item));
 	    };
         });
     });
@@ -143,14 +165,16 @@ function get_repos(response) {
         return; 
     };
     if (has(response.headers, 'link')) {
-	var t = new Object();
-	t.func = get_repos;
-	var link = response.headers.link;
-	options.path = link.substring(23, link.indexOf('>'));
-	console.log(response.headers.link);
-	console.log("process repo: " + options.path);
-	t.opts = clone(options);
-	throttle(t);
+	var links = parse_link_header(response.headers.link);
+	if (links["next"] != null) {
+	    var t = new Object();
+	    t.func = get_repos;
+	    t.opts = clone(options);
+	    t.opts.path = links["next"].substring(22, links["next"].length);
+	    throttle(t);
+	    console.log(response.headers.link);
+	    console.log("get_repos: " + t.opts.path);
+	}
     };
     response.on('error', function(e) {
         console.error(e);
@@ -159,41 +183,37 @@ function get_repos(response) {
         body += d;
     });
     response.on('end', function() {
-	var t = new Object();
-	t.func = get_commits;
         var parsed = JSON.parse(body);
         parsed.forEach(function (item) {
+	    var t = new Object();
+	    t.func = get_commits;
 	    var r = item.full_name.split('/');
-            options.path = "/repos/" + r[0] + "/" + r[1] + "/commits?per_page=100";
-	    //console.log("get commits: " + options.path);
 	    t.opts = clone(options);
+            t.opts.path = "/repos/" + r[0] + "/" + r[1] + "/commits?per_page=100";
 	    throttle(t);
+	    console.log("get_commits: " + t.opts.path);
         });
     });
 };
 
 if (orgs.length >= 1) {
-    options.headers = {};
-    options.headers.Authorization = new String("token " + config.auth.secret);
-    options.headers["User-Agent"] = config.auth.clientid;
-
     orgs.forEach(function(item) {
 	var t = new Object();
         if(item.type == "org") {
 	    t.func = get_repos;
     	    org = item.name;
-	    options.path = "/orgs/" + org + "/repos?per_page=100";
-	    //console.log("process org: " + options.path);
 	    t.opts = clone(options);
+	    t.opts.path = "/orgs/" + org + "/repos?per_page=100";
 	    throttle(t);
+	    console.log("get_repos: " + t.opts.path);
         }
         else if (item.type="repo") {
 	    t.func = get_commits;
             repo = item.name;	
-            options.path = "/repos/" + repo + "/commits?per_page=100";
-	    //console.log("process repo: " + options.path);
 	    t.opts = clone(options);
+            t.opts.path = "/repos/" + repo + "/commits?per_page=100";
 	    throttle(t);
+	    console.log("get_commits: " + t.opts.path);
         };
     });
 };
