@@ -125,6 +125,7 @@ function get_commits(response) {
 	    }
 	    catch (err) {
 		    console.log(err);
+		    console.log(JSON.stringify(item));
 	    };
         });
     });
@@ -143,7 +144,7 @@ function get_repos(response) {
     };
     if (has(response.headers, 'link')) {
 	var t = new Object();
-	t.func = get_commits;
+	t.func = get_repos;
 	var link = response.headers.link;
 	options.path = link.substring(23, link.indexOf('>'));
 	console.log(response.headers.link);
