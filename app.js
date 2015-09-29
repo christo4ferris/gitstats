@@ -128,16 +128,9 @@ function get_commits(response) {
 	        doc.sha = item.sha;
 	        doc.login = "unknown";
 	        if (item.committer != null) doc.login = item.committer.login;
-	        if (has(item.commit), 'committer') {
-	            doc.name = item.commit.committer.name;
-	            doc.email = item.commit.committer.email;
-	            doc.date = item.commit.committer.date;
-	        }
-	        else {
-	            doc.name = item.commit.author.name;
-	            doc.email = item.commit.author.email;
-	            doc.date = item.commit.author.date;
-	        };
+	        doc.name = item.commit.committer.name;
+	        doc.email = item.commit.committer.email;
+	        doc.date = item.commit.committer.date;
 	        date = new Date();
 	        date.setDate(doc.date);
 	        doc.week = date.getWeekNo();
@@ -145,6 +138,15 @@ function get_commits(response) {
 	        var db = http.request(optionsdb, insertdb);
 	        db.write(JSON.stringify(doc));
 	        db.end();
+		// account for pairing situations
+		if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
+	            doc.name = item.commit.author.name;
+	            doc.email = item.commit.author.email;
+	            db = http.request(optionsdb, insertdb);
+	            db.write(JSON.stringify(doc));
+	            db.end();
+		    console.log("adding commit for author: " + doc.name);
+		};
 	    }
 	    catch (err) {
 		    console.log(err);
