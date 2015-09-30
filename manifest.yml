@@ -1,0 +1,8 @@
+---
+applications:
+- name: gitstats
+  memory: 64M
+  instances: 1
+  host: gitstats
+  domain: mybluemix.net
+  buildpack: https://github.com/cloudfoundry/staticfile-buildpack.git
