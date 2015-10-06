@@ -1,25 +1,25 @@
 var https = require('https');
 var http = require('http');
-var orgs = require('./orgs.json');
+var events = require('events');
+var eventEmitter = new events.EventEmitter();
+
+var orgs = require('./dworgs.json');
 var config = require('./config.js');
 
-var org = "christo4ferris";
-var repo = "dwostats";
+var org = "";
+var repo = "";
 var stack = []; 
 var timer = null;
-
-var agent;
-var token;
+var token = "";
 
 var optionsdb = {
-  hostname: '127.0.0.1',
-  path: 'foo',
+  hostname: config.db.url,
+  path: '/',
   port: 5984,
-  method: 'PUT'
+  method: 'PUT',
+  keepAlive: true
 };
 
-var a = new http.Agent({ keepAlive: true });
-optionsdb.agent = a;
 
 var options = {
   hostname: 'api.github.com',
@@ -27,7 +27,8 @@ var options = {
   method: 'GET'
 };
 options.headers = {};
-options.headers.Authorization = new String("token " + config.auth.secret);
+//options.headers.Authorization = new String("token " + config.auth.secret);
+token = "&client_id=" + config.auth.clientid + "&client_secret=" + config.auth.secret;
 options.headers["User-Agent"] = config.auth.clientid;
 
 Date.prototype.getWeekNo = function(){
@@ -120,7 +121,7 @@ function get_commits(response) {
         var doc = {};
         parsed.forEach(function (item) {
 	    try {
-                optionsdb.path = "/gitstats-a/" + item.sha;
+            optionsdb.path = "/" + config.db.name + "/" + item.sha;
 	        var r = item.url.split('/');
 	        doc.org = r[4];
 	        doc.repo = r[5];
@@ -136,7 +137,7 @@ function get_commits(response) {
 	        doc.week = date.getWeekNo();
 	        doc.url = item.url;
 	        var db = http.request(optionsdb, insertdb);
-	        db.write(JSON.stringify(doc));
+            db.write(JSON.stringify(doc));
 	        db.end();
 		// account for pairing situations
 		if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
@@ -198,24 +199,85 @@ function get_repos(response) {
     });
 };
 
-if (orgs.length >= 1) {
-    orgs.forEach(function(item) {
-	var t = new Object();
-        if(item.type == "org") {
-	    t.func = get_repos;
-    	    org = item.name;
-	    t.opts = clone(options);
-	    t.opts.path = "/orgs/" + org + "/repos?per_page=100";
-	    throttle(t);
-	    console.log("get_repos: " + t.opts.path);
-        }
-        else if (item.type="repo") {
-	    t.func = get_commits;
-            repo = item.name;	
-	    t.opts = clone(options);
-            t.opts.path = "/repos/" + repo + "/commits?per_page=100";
-	    throttle(t);
-	    console.log("get_commits: " + t.opts.path);
-        };
+
+
+function delete_db() {
+  optionsdb.path = "/" + config.db.name;
+  optionsdb.method = "DELETE";
+  http.request(optionsdb, function(response) {
+    if (response.statusCode == 200) {
+    console.log('--- DELETE_DB: ' + config.db.name + ' has been deleted.');
+    eventEmitter.emit('couch_db_deleted');
+    }
+    else if (response.statusCode == 404) {
+        console.log('--- DELETE_DB: ' + config.db.name + ' does not exist.');
+        eventEmitter.emit('couch_db_not_exist');
+    }
+    else {
+      console.log("--- DELETE_DB: ", response.statusCode);
+      console.log("headers: ", response.headers);
+    };
+    response.on('--- ERROR: ', function(e) {
+      console.error(e);
     });
-};
+    return;
+  }).end();
+}
+
+
+
+function create_db() {
+  optionsdb.path = "/" + config.db.name;
+  optionsdb.method = "PUT";
+  http.request(optionsdb, function(response) {
+    if (response.statusCode == 201) {
+    console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
+    eventEmitter.emit('couch_db_created');
+    }
+    else if (response.statusCode == 412) {
+        console.log('--- CREATE_DB: ' + config.db.name + ' already exists.');
+        eventEmitter.emit('couch_ready');
+    }
+    else {
+      console.log("--- CREATE_DB: ", response.statusCode);
+      console.log("headers: ", response.headers);
+    };
+    response.on('--- ERROR: ', function(e) {
+      console.error(e);
+    });
+    return;
+  }).end();
+}
+
+
+function load_orgs() {
+  if (orgs.length >= 1) {
+    orgs.forEach(function(item) {
+      var t = new Object();
+      if((item.type == "org") || (item.type == "user"))  {
+      t.func = get_repos;
+      org = item.name;
+      t.opts = clone(options);
+      t.opts.path = "/" + item.type + "s/" + org + "/repos?per_page=100" + token;
+      throttle(t);
+      console.log("get_repos: " + t.opts.path);
+      }
+      else if (item.type="repo") {
+      t.func = get_commits;
+          repo = item.name;	
+      t.opts = clone(options);
+          t.opts.path = "/repos/" + repo + "/commits?per_page=100" + token;
+      throttle(t);
+      console.log("get_commits: " + t.opts.path);
+      };
+    });
+  }
+}
+
+eventEmitter.once('couch_db_exists', load_orgs);
+eventEmitter.once('couch_db_not_exist', create_db);
+eventEmitter.once('couch_db_created', load_orgs);
+eventEmitter.once('couch_db_deleted', create_db);
+eventEmitter.once('couch_ready', load_orgs);
+
+delete_db();

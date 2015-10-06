@@ -1,0 +1,13 @@
+{
+  "name": "gitstats",
+  "version": "0.0.2",
+  "license": "MIT",
+  "description": "Gitstats",
+  "dependencies": {
+  },
+  "main": "app.js",
+  "engines": {
+    "node": "^0.12.7"
+  },
+  "repository": {}
+}
