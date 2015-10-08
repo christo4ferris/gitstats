@@ -3,7 +3,7 @@ var http = require('http');
 var events = require('events');
 var eventEmitter = new events.EventEmitter();
 
-var orgs = require('./dworgs.json');
+var orgs = require('./orgs.json');
 var config = require('./config.js');
 
 var org = "";
@@ -27,9 +27,14 @@ var options = {
   method: 'GET'
 };
 options.headers = {};
-//options.headers.Authorization = new String("token " + config.auth.secret);
-token = "&client_id=" + config.auth.clientid + "&client_secret=" + config.auth.secret;
 options.headers["User-Agent"] = config.auth.clientid;
+
+// Use this for a personal (OAUTH) token
+//options.headers.Authorization = new String("token " + config.auth.secret);
+
+// Use this for a registered app token
+token = "&client_id=" + config.auth.clientid + "&client_secret=" + config.auth.secret;
+
 
 Date.prototype.getWeekNo = function(){
     var d = new Date(+this);
@@ -40,12 +45,12 @@ Date.prototype.getWeekNo = function(){
 
 function insertdb(response) {
     var b = '';
-    //console.log("insertdb statusCode: ", response.statusCode);
+    //console.log("--- INSERTDB: statusCode: ", response.statusCode);
     response.on('error', function(e) {
-        console.error(e);
+      console.error(e);
     });
     response.on('data', function(d) {
-        b += d;
+      b += d;
     });
     response.on('end', function() {
     });
@@ -68,7 +73,7 @@ function process() {
 function throttle(item) {
     stack.push(item);
     if (timer === null) {
-        timer = setInterval(process, 2100);
+        timer = setInterval(process, config.timer);
     };
 };
 
@@ -114,7 +119,7 @@ function get_commits(response) {
         console.error(e);
     });
     response.on('data', function(d) {
-        body += d;
+      body += d;
     });
     response.on('end', function() {
         var parsed = JSON.parse(body);
@@ -123,6 +128,7 @@ function get_commits(response) {
 	    try {
             optionsdb.path = "/" + config.db.name + "/" + item.sha;
 	        var r = item.url.split('/');
+            doc.type = 'commit'
 	        doc.org = r[4];
 	        doc.repo = r[5];
 	        doc.repofullname = r[4] + '/' + r[5];
@@ -192,7 +198,7 @@ function get_repos(response) {
 	    t.func = get_commits;
 	    var r = item.full_name.split('/');
 	    t.opts = clone(options);
-            t.opts.path = "/repos/" + r[0] + "/" + r[1] + "/commits?per_page=100";
+            t.opts.path = "/repos/" + r[0] + "/" + r[1] + "/commits?per_page=100"  + token;
 	    throttle(t);
 	    console.log("get_commits: " + t.opts.path);
         });
@@ -281,3 +287,4 @@ eventEmitter.once('couch_db_deleted', create_db);
 eventEmitter.once('couch_ready', load_orgs);
 
 delete_db();
+//create_db();

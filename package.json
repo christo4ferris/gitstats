@@ -1,6 +1,6 @@
 {
   "name": "gitstats",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "license": "MIT",
   "description": "Gitstats",
   "dependencies": {
@@ -9,5 +9,8 @@
   "engines": {
     "node": "^0.12.7"
   },
-  "repository": {}
+  "repository": {
+    "type" : "git",
+    "url" : "https://github.com/christo4ferris/gitstats"
+  }
 }
