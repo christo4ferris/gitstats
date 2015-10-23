@@ -7,7 +7,7 @@ var eventEmitter = new events.EventEmitter();
 var orgs = require('./dworgs.json');
 var config = require('./config.js');
 
-//var port = config.port || 3000;
+var port = config.port || 3000;
 //var host = config.host || 'localhost';
 
 var org = '';
