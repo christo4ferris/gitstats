@@ -2,6 +2,8 @@
 var https = require('https');
 var http = require('http');
 var events = require('events');
+var has = require('./has.js');
+var parse_link = require('./parse_link.js');
 var eventEmitter = new events.EventEmitter();
 
 var orgs = require('./dworgs.json');
@@ -66,10 +68,6 @@ function insertdb(response) {
 	});
 }
 
-function has(object, key) {
-	return object ? hasOwnProperty.call(object, key) : false;
-}
-
 function process() {
 	var item = stack.shift();
 	//console.log('process: ' + item.opts.path);
@@ -87,25 +85,6 @@ function throttle(item) {
 	}
 }
 
-function parse_link_header(header) {
-	if (header.length === 0) {
-		throw new Error('input must not be of zero length');
-	}
-
-	var parts = header.split(',');
-	var links = {};
-	for(var i=0; i<parts.length; i++) {
-		var section = parts[i].split(';');
-		if (section.length !== 2) {
-			throw new Error('section could not be split on \';\'');
-		}
-		var url = section[0].replace(/<(.*)>/, '$1').trim();
-		var name = section[1].replace(/rel='(.*)'/, '$1').trim();
-		links[name] = url;
-	}
-	return links;
-}
-
 function get_pull_requests(response) {
 	if (config.collect_pull_requests) {
 		var body = '';
@@ -115,7 +94,7 @@ function get_pull_requests(response) {
 			return;
 		}
 		if (has(response.headers, 'link')) {
-			var links = parse_link_header(response.headers.link);
+			var links = parse_link(response.headers.link);
 			if (links['next'] != null) {
 				var t = new Object();
 				t.func = get_pull_requests;
@@ -183,7 +162,7 @@ function get_commits(response) {
 			return;
 		}
 		if (has(response.headers, 'link')) {
-			var links = parse_link_header(response.headers.link);
+			var links = parse_link(response.headers.link);
 			if (links['next'] != null) {
 				var t = new Object();
 				t.func = get_commits;
@@ -254,7 +233,7 @@ function get_repos(response) {
 		return; 
 	}
 	if (has(response.headers, 'link')) {
-		var links = parse_link_header(response.headers.link);
+		var links = parse_link(response.headers.link);
 		if (links['next'] != null) {
 			var t = new Object();
 			t.func = get_repos;
