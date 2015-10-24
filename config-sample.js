@@ -8,6 +8,7 @@ module.exports = {
     'name': '[]',
     'url': '[]'
   },
-	orgsfile: '[path to orgs.js file]',
+	'orgsfile': '[path to orgs.js file]',
+	'collect_pull_requests': false,
 	'timer': 2000
 };
