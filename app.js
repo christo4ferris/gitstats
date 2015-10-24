@@ -66,7 +66,7 @@ function insertdb(response) {
 	});
 }
 
-function has(object, key) {
+exports.has = function (object, key) {
 	return object ? hasOwnProperty.call(object, key) : false;
 }
 
@@ -87,7 +87,7 @@ function throttle(item) {
 	}
 }
 
-function parse_link_header(header) {
+exports.parse_link_header = function (header) {
 	if (header.length === 0) {
 		throw new Error('input must not be of zero length');
 	}
@@ -100,7 +100,7 @@ function parse_link_header(header) {
 			throw new Error('section could not be split on \';\'');
 		}
 		var url = section[0].replace(/<(.*)>/, '$1').trim();
-		var name = section[1].replace(/rel='(.*)'/, '$1').trim();
+		var name = section[1].replace(/rel="(.*)"/, '$1').trim();
 		links[name] = url;
 	}
 	return links;

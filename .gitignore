@@ -3,3 +3,4 @@ node_modules
 reduce.json
 config.js
 allcommits.json
+npm-debug.log
