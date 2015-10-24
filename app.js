@@ -7,8 +7,8 @@ var Throttler = require('./throttle.js');
 var parse_link = require('./parse_link.js');
 var eventEmitter = new events.EventEmitter();
 
-var orgs = require('./dworgs.json');
 var config = require('./config.js');
+var orgs = require(config.orgsfile);
 
 //var port = config.port || 3000;
 //var host = config.host || 'localhost';
@@ -57,9 +57,6 @@ function insertdb(response) {
 		console.log('--- INSERT_DB: ')
 		console.error(e);
 	});
-	// not needed
-	//response.on('data', function(d) {
-	//});
 	response.on('end', function() {
 		if (response.statusCode === 409) {
 			console.log('--- INSERT_DB: document already exists.');
@@ -84,60 +81,58 @@ function get_more(response, func) {
 }
 
 function get_pull_requests(response) {
-	if (config.collect_pull_requests) {
-		var body = '';
-		if (response.statusCode != 200) {
-			console.log('get_pull_requests: ' + response.url + ' moving on... status:' + response.statusCode);
-			console.log('headers: ', response.headers);
-			return;
-		}
-		get_more(response, get_pull_requests);
-		response.on('error', function(e) {
-			console.error(e);
-		});
-		response.on('data', function(d) {
-			body += d;
-		});
-		response.on('end', function() {
-			var parsed = JSON.parse(body);
-			var doc = {};
-			parsed.forEach(function (item) {
-				try {
-					optionsdb.path = '/' + config.db.name + '/' + item.head.sha;
-					var r = item.url.split('/');
-					doc.type = 'pull_request'
-					doc.org = r[4];
-					doc.repo = r[5];
-					doc.repofullname = r[4] + '/' + r[5];
-					doc.sha = item.head.sha;
-					doc.number = item.number;
-					doc.state = item.state;
-					doc.date = item.created_at;
-					doc.commits = item.commits_url;
-					doc.user = item.user.login;
-					var date = new Date(doc.date);
-					doc.week = date.getWeekNo();
-					doc.url = item.url;
-					var db = http.request(optionsdb, insertdb);
+	var body = '';
+	if (response.statusCode != 200) {
+		console.log('get_pull_requests: ' + response.url + ' moving on... status:' + response.statusCode);
+		console.log('headers: ', response.headers);
+		return;
+	}
+	get_more(response, get_pull_requests);
+	response.on('error', function(e) {
+		console.error(e);
+	});
+	response.on('data', function(d) {
+		body += d;
+	});
+	response.on('end', function() {
+		var parsed = JSON.parse(body);
+		var doc = {};
+		parsed.forEach(function (item) {
+			try {
+				optionsdb.path = '/' + config.db.name + '/' + item.head.sha;
+				var r = item.url.split('/');
+				doc.type = 'pull_request'
+				doc.org = r[4];
+				doc.repo = r[5];
+				doc.repofullname = r[4] + '/' + r[5];
+				doc.sha = item.head.sha;
+				doc.number = item.number;
+				doc.state = item.state;
+				doc.date = item.created_at;
+				doc.commits = item.commits_url;
+				doc.user = item.user.login;
+				var date = new Date(doc.date);
+				doc.week = date.getWeekNo();
+				doc.url = item.url;
+				var db = http.request(optionsdb, insertdb);
+				db.write(JSON.stringify(doc));
+				db.end();
+				// account for pairing situations
+				// TODO - I think that we need to insert with a new id - hence optionsdb.path needs to be different than above
+				if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
+					doc.name = item.commit.author.name;
+					doc.email = item.commit.author.email;
+					db = http.request(optionsdb, insertdb);
 					db.write(JSON.stringify(doc));
 					db.end();
-					// account for pairing situations
-					// TODO - I think that we need to insert with a new id - hence optionsdb.path needs to be different than above
-					if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
-						doc.name = item.commit.author.name;
-						doc.email = item.commit.author.email;
-						db = http.request(optionsdb, insertdb);
-						db.write(JSON.stringify(doc));
-						db.end();
-					}
-					console.log('adding pull for author: ',doc.sha,doc.name);
 				}
-				catch (err) {
-					console.log(err);
-				}
-			});
+				console.log('adding pull for author: ',doc.sha,doc.name);
+			}
+			catch (err) {
+				console.log(err);
+			}
 		});
-	}
+	});
 }
 
 function get_commits(response) {
@@ -229,9 +224,11 @@ function get_repos(response) {
 			//console.log('--- GET_REPOS: get_commits: ' + t.opts.path);
 
 			// get pull requests
-			t.func = get_pull_requests;
-			t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all'  + token;
-			T.throttle(t);
+			if (config.collect_pull_requests) {
+				t.func = get_pull_requests;
+				t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all'  + token;
+				T.throttle(t);
+			}
 			//console.log('--- GET REPOS: get_pull_requests: ' + t.opts.path);
 		});
 	});
