@@ -7,5 +7,8 @@ module.exports = {
   'db': {
     'name': '[]',
     'url': '[]'
-  }
+  },
+	'orgsfile': '[path to orgs.js file]',
+	'collect_pull_requests': false,
+	'timer': 2000
 };
