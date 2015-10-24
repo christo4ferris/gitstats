@@ -1,8 +1,9 @@
 /*eslint-env node */
-var https = require('https');
+//var https = require('https');
 var http = require('http');
 var events = require('events');
 var has = require('./has.js');
+var Throttler = require('./throttle.js');
 var parse_link = require('./parse_link.js');
 var eventEmitter = new events.EventEmitter();
 
@@ -14,9 +15,8 @@ var config = require('./config.js');
 
 var org = '';
 var repo = '';
-var stack = []; 
-var timer = null;
 var token = '';
+var T = Throttler(config);
 
 //require(path.join(__dirname, 'routes.js'))(app); // load our routes and pass in our app, config, and fully configured passport
 
@@ -27,7 +27,6 @@ var optionsdb = {
 	method: 'PUT',
 	keepAlive: true
 };
-
 
 var options = {
 	hostname: 'api.github.com',
@@ -68,20 +67,19 @@ function insertdb(response) {
 	});
 }
 
-function process() {
-	var item = stack.shift();
-	//console.log('process: ' + item.opts.path);
-	https.request(item.opts, item.func).end();
-	if (stack.length === 0) {
-		clearInterval(timer);
-		timer = null;
-	}
-}
-
-function throttle(item) {
-	stack.push(item);
-	if (timer === null) {
-		timer = setInterval(process, config.timer);
+// this will process the link header (if present) and invoke the requested function if a next header is present
+function get_more(response, func) {
+	if (has(response.headers, 'link')) {
+		var links = parse_link(response.headers.link);
+		if (links['next'] != null) {
+			var t = new Object();
+			t.func = func;
+			t.opts = clone(options);
+			t.opts.path = links['next'].substring(22, links['next'].length);
+			T.throttle(t);
+			console.log(response.headers.link);
+			console.log(func.name + ': ' + t.opts.path);
+		}
 	}
 }
 
@@ -93,18 +91,7 @@ function get_pull_requests(response) {
 			console.log('headers: ', response.headers);
 			return;
 		}
-		if (has(response.headers, 'link')) {
-			var links = parse_link(response.headers.link);
-			if (links['next'] != null) {
-				var t = new Object();
-				t.func = get_pull_requests;
-				t.opts = clone(options);
-				t.opts.path = links['next'].substring(22, links['next'].length);
-				throttle(t);
-				console.log(response.headers.link);
-				console.log('get_pull_requests: ' + t.opts.path)
-			}
-		}
+		get_more(response, get_pull_requests);
 		response.on('error', function(e) {
 			console.error(e);
 		});
@@ -115,41 +102,41 @@ function get_pull_requests(response) {
 			var parsed = JSON.parse(body);
 			var doc = {};
 			parsed.forEach(function (item) {
-			try {
-				optionsdb.path = '/' + config.db.name + '/' + item.head.sha;
-				var r = item.url.split('/');
-				doc.type = 'pull_request'
-				doc.org = r[4];
-				doc.repo = r[5];
-				doc.repofullname = r[4] + '/' + r[5];
-				doc.sha = item.head.sha;
-				doc.number = item.number;
-				doc.state = item.state;
-				doc.date = item.created_at;
-				doc.commits = item.commits_url;
-				doc.user = item.user.login;
-				var date = new Date();
-				date.setDate(doc.date);
-				doc.week = date.getWeekNo();
-				doc.url = item.url;
-				var db = http.request(optionsdb, insertdb);
-				db.write(JSON.stringify(doc));
-				db.end();
-				// account for pairing situations
-				if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
-					doc.name = item.commit.author.name;
-					doc.email = item.commit.author.email;
-					db = http.request(optionsdb, insertdb);
+				try {
+					optionsdb.path = '/' + config.db.name + '/' + item.head.sha;
+					var r = item.url.split('/');
+					doc.type = 'pull_request'
+					doc.org = r[4];
+					doc.repo = r[5];
+					doc.repofullname = r[4] + '/' + r[5];
+					doc.sha = item.head.sha;
+					doc.number = item.number;
+					doc.state = item.state;
+					doc.date = item.created_at;
+					doc.commits = item.commits_url;
+					doc.user = item.user.login;
+					var date = new Date(doc.date);
+					doc.week = date.getWeekNo();
+					doc.url = item.url;
+					var db = http.request(optionsdb, insertdb);
 					db.write(JSON.stringify(doc));
 					db.end();
+					// account for pairing situations
+					// TODO - I think that we need to insert with a new id - hence optionsdb.path needs to be different than above
+					if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
+						doc.name = item.commit.author.name;
+						doc.email = item.commit.author.email;
+						db = http.request(optionsdb, insertdb);
+						db.write(JSON.stringify(doc));
+						db.end();
+					}
+					console.log('adding pull for author: ',doc.sha,doc.name);
 				}
-				console.log('adding pull for author: ',doc.sha,doc.name);
-			}
-			catch (err) {
-				console.log(err);
-			}
+				catch (err) {
+					console.log(err);
+				}
+			});
 		});
-	});
 	}
 }
 
@@ -161,18 +148,7 @@ function get_commits(response) {
 			console.log('headers: ', response.headers);
 			return;
 		}
-		if (has(response.headers, 'link')) {
-			var links = parse_link(response.headers.link);
-			if (links['next'] != null) {
-				var t = new Object();
-				t.func = get_commits;
-				t.opts = clone(options);
-				t.opts.path = links['next'].substring(22, links['next'].length);
-				throttle(t);
-				console.log(response.headers.link);
-				console.log('get_commits: ' + t.opts.path)
-			}
-		}
+		get_more(response, get_commits);
 		response.on('error', function(e) {
 			console.error(e);
 		});
@@ -232,18 +208,7 @@ function get_repos(response) {
 		console.log('headers: ', response.headers);
 		return; 
 	}
-	if (has(response.headers, 'link')) {
-		var links = parse_link(response.headers.link);
-		if (links['next'] != null) {
-			var t = new Object();
-			t.func = get_repos;
-			t.opts = clone(options);
-			t.opts.path = links['next'].substring(22, links['next'].length);
-			throttle(t);
-			console.log(response.headers.link);
-			console.log('get_repos: ' + t.opts.path);
-		}
-	}
+	get_more(response, get_repos);
 	response.on('error', function(e) {
 		console.error(e);
 	});
@@ -260,13 +225,13 @@ function get_repos(response) {
 			// get commits
 			t.func = get_commits;
 			t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100'  + token;
-			throttle(t);
+			T.throttle(t);
 			//console.log('--- GET_REPOS: get_commits: ' + t.opts.path);
 
 			// get pull requests
 			t.func = get_pull_requests;
 			t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all'  + token;
-			throttle(t);
+			T.throttle(t);
 			//console.log('--- GET REPOS: get_pull_requests: ' + t.opts.path);
 		});
 	});
@@ -341,7 +306,7 @@ function load_orgs() {
 				org = item.name;
 				t.opts = clone(options);
 				t.opts.path = '/' + item.type + 's/' + org + '/repos?per_page=100' + token;
-				throttle(t);
+				T.throttle(t);
 			}
 
 			// if this is a repo, queue up requests for commits and pull_requests
@@ -362,13 +327,13 @@ function load_orgs() {
 				// get commits
 				t.func = get_commits;
 				t.opts.path = '/repos/' + repo + '/commits?per_page=100' + token;
-				throttle(t);
+				T.throttle(t);
 				//console.log('--- LOAD ORGS: get_commits: ' + t.opts.path);
 
 				// get pull requests
 				s.func = get_pull_requests;
 				s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + token;
-				throttle(s);
+				T.throttle(s);
 				//console.log('--- LOAD ORGS: get_pull_requests: ' + s.opts.path);
 			}
 		});
