@@ -3,6 +3,7 @@
 var http = require('http');
 var events = require('events');
 var has = require('./has.js');
+var clone = require('./clone.js');
 var Throttler = require('./throttle.js');
 var parse_link = require('./parse_link.js');
 var eventEmitter = new events.EventEmitter();
@@ -190,10 +191,6 @@ function get_commits(response) {
 			});
 		});
 	}
-}
-
-function clone(obj) {
-	return JSON.parse(JSON.stringify(obj));
 }
 
 function get_repos(response) {

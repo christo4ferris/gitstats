@@ -1,0 +1,5 @@
+/*eslint-env node */
+function clone(obj) {
+	return JSON.parse(JSON.stringify(obj));
+}
+module.exports = clone;
