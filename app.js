@@ -2,13 +2,13 @@
 //var https = require('https');
 var http = require('http');
 var events = require('events');
-var has = require('./has.js');
-var clone = require('./clone.js');
-var Throttler = require('./throttle.js');
-var parse_link = require('./parse_link.js');
+var has = require('./has');
+var clone = require('./clone');
+const Throttler = require('./throttle');
+var parse_link = require('./parse_link');
 var eventEmitter = new events.EventEmitter();
 
-var config = require('./config.js');
+var config = require('./config');
 var orgs = require(config.orgsfile);
 
 //var port = config.port || 3000;
@@ -17,7 +17,7 @@ var orgs = require(config.orgsfile);
 var org = '';
 var repo = '';
 var token = '';
-var T = Throttler(config);
+var T = new Throttler(config);
 
 //require(path.join(__dirname, 'routes.js'))(app); // load our routes and pass in our app, config, and fully configured passport
 
