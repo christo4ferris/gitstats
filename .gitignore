@@ -4,3 +4,4 @@ reduce.json
 config.js
 allcommits.json
 npm-debug.log
+coverage/
