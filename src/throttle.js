@@ -29,7 +29,7 @@ class  Throttler {
 
 	setIntervalLength(interval) {
 		if (isNaN(interval)) {
-			throw new Error('setInterval: invalid argument: ' + interval + ' must be an integer')
+			throw new Error('setIntervalLength: invalid argument: must be an integer')
 		}
 		this.interval = parseInt(interval, 10);
 	}
