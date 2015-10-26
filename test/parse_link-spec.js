@@ -1,4 +1,4 @@
-var parse_link = require('../parse_link.js');
+var parse_link = require('../src/parse_link');
 
 describe("parse_link", function() {
 	var header = '<https://api.github.com/user/repos?page=3&per_page=100>; rel="next", <https://api.github.com/user/repos?page=50&per_page=100>; rel="last";';

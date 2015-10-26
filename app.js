@@ -2,10 +2,10 @@
 //var https = require('https');
 var http = require('http');
 var events = require('events');
-var has = require('./has');
-var clone = require('./clone');
-const Throttler = require('./throttle');
-var parse_link = require('./parse_link');
+var has = require('./src/has');
+var clone = require('./src/clone');
+const Throttler = require('./src/throttle');
+var parse_link = require('./src/parse_link');
 var eventEmitter = new events.EventEmitter();
 
 var config = require('./config');

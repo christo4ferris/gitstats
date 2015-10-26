@@ -1,6 +1,6 @@
 'use strict';
 
-const Throttler = require('../throttle');
+const Throttler = require('../src/throttle');
 
 var config = {
 	'auth': {

@@ -1,4 +1,4 @@
-var clone = require('../clone.js');
+var clone = require('../src/clone');
 
 describe("clone", function() {
 	var x = {a: 'b', c: 'd'}	
