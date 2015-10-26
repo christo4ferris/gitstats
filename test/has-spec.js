@@ -1,4 +1,4 @@
-var has = require('../has.js');
+var has = require('../src/has');
 
 describe("has", function() {
 	it("should return true when property exists", function() {
