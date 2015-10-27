@@ -236,11 +236,12 @@ function get_repos(response) {
 		});
 	});
 }
-/*
+
 function delete_db() {
-	optionsdb.path = '/' + config.db.name;
-	optionsdb.method = 'DELETE';
-	http.request(optionsdb, function(response) {
+    var opts = clone(optionsdb);
+	opts.path = '/' + config.db.name;
+	opts.method = 'DELETE';
+	http.request(opts, function(response) {
 		if (response.statusCode == 200) {
 		console.log('--- DELETE_DB: ' + config.db.name + ' has been deleted.');
 		eventEmitter.emit('couch_db_deleted');
@@ -263,12 +264,13 @@ function delete_db() {
 		console.error(e);
 	}).end();
 }
-*/
+
 
 function create_db() {
-	optionsdb.path = '/' + config.db.name;
-	optionsdb.method = 'PUT';
-	http.request(optionsdb, function(response) {
+    var opts = clone(optionsdb);
+	opts.path = '/' + config.db.name;
+	opts.method = 'PUT';
+	http.request(opts, function(response) {
 		if (response.statusCode == 201) {
 		console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
 		eventEmitter.emit('couch_db_created');
@@ -299,7 +301,7 @@ function get_lastpolled(repo) {
         var opts = clone(optionsdb);
         opts.method = 'GET';
         opts.path = '/' + config.db.name + '/' + repo.replace(/\//g, '---');
-        var result = '2016-01-01T00:00:00Z'; // default to earliest UTC value
+        var result = '1970-01-01T00:00:00Z'; // default to earliest UTC value
 
         http.request(opts, function(res){
             res.on('data', function(chunk) {
