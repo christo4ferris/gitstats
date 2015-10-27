@@ -51,7 +51,7 @@ var https = require('https');
 var timer = null;
 var stack = [];
 
-function process() {
+function process_queue() {
     var item = stack.shift();
     console.log("process: " + item.opts.path);
     https.request(item.opts, item.func).end();
@@ -64,7 +64,7 @@ function process() {
 function throttle(item) {
     stack.push(item);
     if (timer === null) {
-      timer = setInterval(process, config.interval);
+      timer = setInterval(process_queue, config.interval);
     }
 }
 
@@ -236,11 +236,12 @@ function get_repos(response) {
 		});
 	});
 }
-/*
+
 function delete_db() {
-	optionsdb.path = '/' + config.db.name;
-	optionsdb.method = 'DELETE';
-	http.request(optionsdb, function(response) {
+    var opts = clone(optionsdb);
+	opts.path = '/' + config.db.name;
+	opts.method = 'DELETE';
+	http.request(opts, function(response) {
 		if (response.statusCode == 200) {
 		console.log('--- DELETE_DB: ' + config.db.name + ' has been deleted.');
 		eventEmitter.emit('couch_db_deleted');
@@ -263,12 +264,13 @@ function delete_db() {
 		console.error(e);
 	}).end();
 }
-*/
+
 
 function create_db() {
-	optionsdb.path = '/' + config.db.name;
-	optionsdb.method = 'PUT';
-	http.request(optionsdb, function(response) {
+    var opts = clone(optionsdb);
+	opts.path = '/' + config.db.name;
+	opts.method = 'PUT';
+	http.request(opts, function(response) {
 		if (response.statusCode == 201) {
 		console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
 		eventEmitter.emit('couch_db_created');
@@ -299,7 +301,7 @@ function get_lastpolled(repo) {
         var opts = clone(optionsdb);
         opts.method = 'GET';
         opts.path = '/' + config.db.name + '/' + repo.replace(/\//g, '---');
-        var result = '2016-01-01T00:00:00Z'; // default to earliest UTC value
+        var result = '1970-01-01T00:00:00Z'; // default to earliest UTC value
 
         http.request(opts, function(res){
             res.on('data', function(chunk) {
@@ -383,14 +385,33 @@ function load_orgs() {
 	}
 }
 
+
+function print_help(){
+    console.log('Usage: node app.js [arguments]\n\n');
+    console.log('Options:');
+    console.log('  -h, --help         print help (this message)');
+    console.log('  --deletedb         delete database (a database will automatically be created)');
+}
+
 eventEmitter.once('couch_db_exists', load_orgs);
 eventEmitter.once('couch_db_not_exist', create_db);
 eventEmitter.once('couch_db_created', load_orgs);
 eventEmitter.once('couch_db_deleted', create_db);
 eventEmitter.once('couch_ready', load_orgs);
 
-//delete_db();
-create_db();
+var arg_deletedb  = process.argv.indexOf('--deletedb') != -1 ? true : false;
+var arg_help      = (process.argv.indexOf('-h') != -1) || (process.argv.indexOf('--help') != -1) ? true : false;
+
+if (arg_help) {
+    print_help();
+    process.exit();
+}
+
+if (arg_deletedb) {
+    delete_db();
+} else {
+    create_db();
+}
 
 /*
 app.listen(port, host, initData);
