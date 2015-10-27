@@ -1,7 +1,6 @@
 /*eslint-env node */
 var http            = require('http');
 var events          = require('events');
-var promise         = require('promise');
 var has             = require('./src/has');
 var clone           = require('./src/clone');
 var Throttler       = require('./src/throttle');
@@ -53,21 +52,21 @@ var timer = null;
 var stack = [];
 
 function process() {
-   var item = stack.shift();
-   console.log("process: " + item.opts.path);
-   https.request(item.opts, item.func).end();
-   if (stack.length === 0) {
-       clearInterval(timer);
-       timer = null;
-   };
- };
+    var item = stack.shift();
+    console.log("process: " + item.opts.path);
+    https.request(item.opts, item.func).end();
+    if (stack.length === 0) {
+        clearInterval(timer);
+        timer = null;
+    }
+}
 
 function throttle(item) {
     stack.push(item);
     if (timer === null) {
       timer = setInterval(process, config.interval);
-    };
-};
+    }
+}
 
 // this will process the link header (if present) and invoke the requested function if a next header is present
 function get_more(response, func) {
@@ -302,7 +301,7 @@ function get_lastpolled(repo) {
         opts.path = '/' + config.db.name + '/' + repo.replace(/\//g, '---');
         var result = '2016-01-01T00:00:00Z'; // default to earliest UTC value
 
-        var req = http.request(opts, function(res){
+        http.request(opts, function(res){
             res.on('data', function(chunk) {
                 if ((res.statusCode === 200) || (res.statusCode === 304)) {
                     doc = JSON.parse(chunk);
@@ -324,7 +323,10 @@ function get_lastpolled(repo) {
                 db.end();
                 //console.log('--- GET_LASTPOLLED: new date: ',doc.repofullname, doc.date);
                 resolve(result);
-            })
+            });
+            res.on('error', function(e) {
+                reject(e);
+            });
         }).end();
     });
     return deferred; // <--- happens IMMEDIATELY (object that promise listens on)
@@ -373,6 +375,7 @@ function load_orgs() {
                         //console.log('--- LOAD ORGS: get_pull_requests: ' + s.opts.path);
                     })
                     .catch(function (reason) {
+                        throw new Error('LOAD_ORGS: error: ', reason.response.statusCode, reason.error.message);
                     })
                 );
 			}

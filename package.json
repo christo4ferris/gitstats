@@ -4,8 +4,7 @@
   "license": "MIT",
   "description": "Gitstats",
   "dependencies": {
-    "jasmine-node": "^1.14.5",
-    "promise": "^7.0.4"
+    "jasmine-node": "^1.14.5"
   },
   "main": "app.js",
   "engines": {
