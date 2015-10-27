@@ -51,7 +51,7 @@ var https = require('https');
 var timer = null;
 var stack = [];
 
-function process() {
+function process_queue() {
     var item = stack.shift();
     console.log("process: " + item.opts.path);
     https.request(item.opts, item.func).end();
@@ -64,7 +64,7 @@ function process() {
 function throttle(item) {
     stack.push(item);
     if (timer === null) {
-      timer = setInterval(process, config.interval);
+      timer = setInterval(process_queue, config.interval);
     }
 }
 
@@ -385,14 +385,33 @@ function load_orgs() {
 	}
 }
 
+
+function print_help(){
+    console.log('Usage: node app.js [arguments]\n\n');
+    console.log('Options:');
+    console.log('  -h, --help         print help (this message)');
+    console.log('  --deletedb         delete database (a database will automatically be created)');
+}
+
 eventEmitter.once('couch_db_exists', load_orgs);
 eventEmitter.once('couch_db_not_exist', create_db);
 eventEmitter.once('couch_db_created', load_orgs);
 eventEmitter.once('couch_db_deleted', create_db);
 eventEmitter.once('couch_ready', load_orgs);
 
-//delete_db();
-create_db();
+var arg_deletedb  = process.argv.indexOf('--deletedb') != -1 ? true : false;
+var arg_help      = (process.argv.indexOf('-h') != -1) || (process.argv.indexOf('--help') != -1) ? true : false;
+
+if (arg_help) {
+    print_help();
+    process.exit();
+}
+
+if (arg_deletedb) {
+    delete_db();
+} else {
+    create_db();
+}
 
 /*
 app.listen(port, host, initData);
