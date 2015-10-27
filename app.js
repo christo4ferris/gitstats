@@ -14,7 +14,7 @@ var eventEmitter    = new events.EventEmitter();
 //var port          = config.port || 3000;
 //var host          = config.host || 'localhost';
 
-var T               = new Throttler(config);
+//var T               = new Throttler(config);
 
 //require(path.join(__dirname, 'routes.js'))(app); // load our routes and pass in our app, config, and fully configured passport
 
