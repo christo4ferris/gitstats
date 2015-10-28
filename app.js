@@ -1,6 +1,7 @@
 /*eslint-env node */
 var http            = require('http');
 var events          = require('events');
+var crypto          = require('crypto');
 var has             = require('./src/has');
 var clone           = require('./src/clone');
 //var Throttler       = require('./src/throttle');
@@ -53,7 +54,7 @@ var stack = [];
 
 function process_queue() {
     var item = stack.shift();
-    console.log("process: " + item.opts.path);
+    console.log("PROCESS_QUEUE: ",item.func.name,item.opts.path);
     https.request(item.opts, item.func).end();
     if (stack.length === 0) {
         clearInterval(timer);
@@ -77,15 +78,24 @@ function get_more(response, func) {
 			t.func = func;
 			t.opts = clone(options);
 			t.opts.path = links['next'].substring(22, links['next'].length);
+
+            if (func.name === 'get_stargazers') {
+                // add media headers for GET_STARGAZERS
+                t.opts.headers = {
+                    'Accept': 'application/vnd.github.v3.star+json',
+                    'User-Agent': 'gitstats',
+                    'Content-Type': 'application/json'
+                }  // see https://developer.github.com/v3/activity/starring
+            }
 			//T.throttle(t);
             throttle(t);
-			console.log(response.headers.link);
-			console.log(func.name + ': ' + t.opts.path);
+			//console.log(response.headers.link);
+			console.log('GET_MORE: ',func.name + ': ' + t.opts.path);
 		}
 	}
 }
 
-/*function get_stargazers(response) {
+function get_stargazers(response) {
     var opts = clone(optionsdb);
 	var body = '';
 	if (response.statusCode != 200) {
@@ -105,7 +115,11 @@ function get_more(response, func) {
 		var doc = {};
 		parsed.forEach(function (item) {
 			try {
-				opts.path = '/' + config.db.name + '/' + Date.now();
+                // create a sha digest to be used as the docid
+                var shasum = crypto.createHash('sha1');
+                shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
+                var digest = shasum.digest('hex');
+				opts.path = '/' + config.db.name + '/' + digest;
 				var r = response.socket._httpMessage.path.split('/');
 				doc.type = 'event';
                 doc.event = 'stargazer';
@@ -117,17 +131,19 @@ function get_more(response, func) {
                 doc.user_id = item.user.id;
 				var date = new Date(doc.date);
 				doc.week = date.getWeekNo();
-				var db = http.request(opts, handle_response);
-				db.write(JSON.stringify(doc));
-				db.end();
-				console.log('GET_STARGAZERS: ', doc.repo, doc.date, doc.user, doc.user_id);
+				//var db = http.request(opts, handle_response);
+				//db.write(JSON.stringify(doc));
+				//db.end();
+				console.log('GET_STARGAZERS: ', doc.repo, doc.date, doc.user, doc.user_id, opts.path);
 			}
 			catch (err) {
+                //console.log('GET_STARGAZERS: item: ',item);
+                console.log('GET_STARGAZERS: path: ',response.socket._httpMessage.path)
 				console.log(err);
 			}
 		});
 	});
-}*/
+}
 
 function get_pull_requests(response) {
 	var body = '';
@@ -176,7 +192,7 @@ function get_pull_requests(response) {
 					db.write(JSON.stringify(doc));
 					db.end();
 				}
-				console.log('adding pull for author: ',doc.sha,doc.name);
+				//console.log('adding pull for author: ',doc.sha,doc.name);
 			}
 			catch (err) {
 				console.log(err);
@@ -233,7 +249,7 @@ function get_commits(response) {
 						db.write(JSON.stringify(doc));
 						db.end();
 					}
-					console.log('adding commit for author: ',doc.sha,doc.name);
+					//console.log('adding commit for author: ',doc.sha,doc.name);
 				}
 				catch (err) {
 					console.log(err);
@@ -264,6 +280,7 @@ function get_repos(response) {
 			var t = new Object();
 			var r = item.full_name.split('/');
 			t.opts = clone(options);
+
 			// get commits
 			t.func = get_commits;
 			t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100'  + token;
@@ -425,7 +442,7 @@ function load_orgs() {
                         //console.log('--- LOAD ORGS: get_pull_requests: ' + s.opts.path);
 
                         // get stargazers
-/*                        u.func = get_stargazers;
+                        u.func = get_stargazers;
                         u.opts.method = 'GET'
                         u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + since + token;
                         u.opts.headers = {
@@ -435,7 +452,7 @@ function load_orgs() {
                         };  // see https://developer.github.com/v3/activity/starring
                         //T.throttle(u);
                         throttle(u);
-                        //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);*/
+                        //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);
                     })
                     .catch(function (reason) {
                         throw new Error('LOAD_ORGS: error: ', reason.response.statusCode, reason.error.message);
