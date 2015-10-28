@@ -85,8 +85,7 @@ function get_more(response, func) {
 	}
 }
 
-function get_stargazers(response) {
-    debugger;
+/*function get_stargazers(response) {
     var opts = clone(optionsdb);
 	var body = '';
 	if (response.statusCode != 200) {
@@ -128,7 +127,7 @@ function get_stargazers(response) {
 			}
 		});
 	});
-}
+}*/
 
 function get_pull_requests(response) {
 	var body = '';
