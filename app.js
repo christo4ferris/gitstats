@@ -131,9 +131,9 @@ function get_stargazers(response) {
                 doc.user_id = item.user.id;
 				var date = new Date(doc.date);
 				doc.week = date.getWeekNo();
-				//var db = http.request(opts, handle_response);
-				//db.write(JSON.stringify(doc));
-				//db.end();
+				var db = http.request(opts, handle_response);
+				db.write(JSON.stringify(doc));
+				db.end();
 				console.log('GET_STARGAZERS: ', doc.repo, doc.date, doc.user, doc.user_id, opts.path);
 			}
 			catch (err) {
