@@ -85,6 +85,50 @@ function get_more(response, func) {
 	}
 }
 
+/*function get_stargazers(response) {
+    var opts = clone(optionsdb);
+	var body = '';
+	if (response.statusCode != 200) {
+		console.log('get_stargazers: ' + response.socket._httpMessage.path + ' moving on... status:' + response.statusCode);
+		console.log('headers1: ', response.headers);
+		return;
+	}
+	get_more(response, get_stargazers);
+	response.on('error', function(e) {
+		console.error(e);
+	});
+	response.on('data', function(d) {
+		body += d;
+	});
+	response.on('end', function() {
+		var parsed = JSON.parse(body);
+		var doc = {};
+		parsed.forEach(function (item) {
+			try {
+				opts.path = '/' + config.db.name + '/' + Date.now();
+				var r = response.socket._httpMessage.path.split('/');
+				doc.type = 'event';
+                doc.event = 'stargazer';
+				doc.org = r[2];
+				doc.repo = r[3];
+				doc.repofullname = r[2] + '/' + r[3];
+                doc.date = item.starred_at
+                doc.user = item.user.login;
+                doc.user_id = item.user.id;
+				var date = new Date(doc.date);
+				doc.week = date.getWeekNo();
+				var db = http.request(opts, handle_response);
+				db.write(JSON.stringify(doc));
+				db.end();
+				console.log('GET_STARGAZERS: ', doc.repo, doc.date, doc.user, doc.user_id);
+			}
+			catch (err) {
+				console.log(err);
+			}
+		});
+	});
+}*/
+
 function get_pull_requests(response) {
 	var body = '';
 	if (response.statusCode != 200) {
@@ -104,9 +148,10 @@ function get_pull_requests(response) {
 		var doc = {};
 		parsed.forEach(function (item) {
 			try {
-				optionsdb.path = '/' + config.db.name + '/' + item.head.sha;
+                var opts = clone(optionsdb);
+				opts.path = '/' + config.db.name + '/' + item.head.sha;
 				var r = item.url.split('/');
-				doc.type = 'pull_request'
+				doc.type = 'pull_request';
 				doc.org = r[4];
 				doc.repo = r[5];
 				doc.repofullname = r[4] + '/' + r[5];
@@ -119,15 +164,15 @@ function get_pull_requests(response) {
 				var date = new Date(doc.date);
 				doc.week = date.getWeekNo();
 				doc.url = item.url;
-				var db = http.request(optionsdb, handle_response);
+				var db = http.request(opts, handle_response);
 				db.write(JSON.stringify(doc));
 				db.end();
 				// account for pairing situations
-				// TODO - I think that we need to insert with a new id - hence optionsdb.path needs to be different than above
+				// TODO - I think that we need to insert with a new id - hence opts.path needs to be different than above
 				if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
 					doc.name = item.commit.author.name;
 					doc.email = item.commit.author.email;
-					db = http.request(optionsdb, handle_response);
+					db = http.request(opts, handle_response);
 					db.write(JSON.stringify(doc));
 					db.end();
 				}
@@ -160,9 +205,10 @@ function get_commits(response) {
 			var doc = {};
 			parsed.forEach(function (item) {
 				try {
-					optionsdb.path = '/' + config.db.name + '/' + item.sha;
+                    var opts = clone(optionsdb)
+					opts.path = '/' + config.db.name + '/' + item.sha;
 					var r = item.url.split('/');
-					doc.type = 'commit'
+					doc.type = 'commit';
 					doc.org = r[4];
 					doc.repo = r[5];
 					doc.repofullname = r[4] + '/' + r[5];
@@ -176,14 +222,14 @@ function get_commits(response) {
 					date.setDate(doc.date);
 					doc.week = date.getWeekNo();
 					doc.url = item.url;
-					var db = http.request(optionsdb, handle_response);
+					var db = http.request(opts, handle_response);
 					db.write(JSON.stringify(doc));
 					db.end();
 					// account for pairing situations
 					if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
 						doc.name = item.commit.author.name;
 						doc.email = item.commit.author.email;
-						db = http.request(optionsdb, handle_response);
+						db = http.request(opts, handle_response);
 						db.write(JSON.stringify(doc));
 						db.end();
 					}
@@ -339,8 +385,10 @@ function load_orgs() {
 		orgs.forEach(function(item) {
 			var t = new Object();
 			var s = new Object();
+            var u = new Object();
 			t.opts = clone(options);
 			s.opts = clone(options);
+            u.opts = clone(options);
 
 			// if this is an 'org' or 'user', put it in the queue to enumerate into a repo
 			if((item.type == 'org') || (item.type == 'user'))  {
@@ -360,7 +408,7 @@ function load_orgs() {
                 Promise.resolve(get_lastpolled(repo)
                     .then (function (result) {
                         var since = '&since=' + result;
-                        //console.log('--- LOAD_ORGS: ' + optionsdb.path, result);
+                        //console.log('--- LOAD_ORGS: ' + t.opts.path, result);
 
                         // get commits
                         t.func = get_commits;
@@ -373,8 +421,21 @@ function load_orgs() {
                         s.func = get_pull_requests;
                         s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + token;
                         //T.throttle(s);
-                        throttle(t);
+                        throttle(s);
                         //console.log('--- LOAD ORGS: get_pull_requests: ' + s.opts.path);
+
+                        // get stargazers
+/*                        u.func = get_stargazers;
+                        u.opts.method = 'GET'
+                        u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + since + token;
+                        u.opts.headers = {
+                            'Accept': 'application/vnd.github.v3.star+json',
+                            'User-Agent': 'gitstats',
+                            'Content-Type': 'application/json'
+                        };  // see https://developer.github.com/v3/activity/starring
+                        //T.throttle(u);
+                        throttle(u);
+                        //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);*/
                     })
                     .catch(function (reason) {
                         throw new Error('LOAD_ORGS: error: ', reason.response.statusCode, reason.error.message);
