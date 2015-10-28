@@ -106,7 +106,7 @@ function get_stargazers(response) {
 		var doc = {};
 		parsed.forEach(function (item) {
 			try {
-				//opts.path = '/' + config.db.name + '/' + item.head.sha;
+				opts.path = '/' + config.db.name + '/' + Date.now();
 				var r = response.socket._httpMessage.path.split('/');
 				doc.type = 'event';
                 doc.event = 'stargazer';
@@ -149,7 +149,8 @@ function get_pull_requests(response) {
 		var doc = {};
 		parsed.forEach(function (item) {
 			try {
-				optionsdb.path = '/' + config.db.name + '/' + item.head.sha;
+                var opts = clone(optionsdb);
+				opts.path = '/' + config.db.name + '/' + item.head.sha;
 				var r = item.url.split('/');
 				doc.type = 'pull_request';
 				doc.org = r[4];
@@ -164,15 +165,15 @@ function get_pull_requests(response) {
 				var date = new Date(doc.date);
 				doc.week = date.getWeekNo();
 				doc.url = item.url;
-				var db = http.request(optionsdb, handle_response);
+				var db = http.request(opts, handle_response);
 				db.write(JSON.stringify(doc));
 				db.end();
 				// account for pairing situations
-				// TODO - I think that we need to insert with a new id - hence optionsdb.path needs to be different than above
+				// TODO - I think that we need to insert with a new id - hence opts.path needs to be different than above
 				if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
 					doc.name = item.commit.author.name;
 					doc.email = item.commit.author.email;
-					db = http.request(optionsdb, handle_response);
+					db = http.request(opts, handle_response);
 					db.write(JSON.stringify(doc));
 					db.end();
 				}
@@ -205,7 +206,8 @@ function get_commits(response) {
 			var doc = {};
 			parsed.forEach(function (item) {
 				try {
-					optionsdb.path = '/' + config.db.name + '/' + item.sha;
+                    var opts = clone(optionsdb)
+					opts.path = '/' + config.db.name + '/' + item.sha;
 					var r = item.url.split('/');
 					doc.type = 'commit';
 					doc.org = r[4];
@@ -221,14 +223,14 @@ function get_commits(response) {
 					date.setDate(doc.date);
 					doc.week = date.getWeekNo();
 					doc.url = item.url;
-					var db = http.request(optionsdb, handle_response);
+					var db = http.request(opts, handle_response);
 					db.write(JSON.stringify(doc));
 					db.end();
 					// account for pairing situations
 					if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
 						doc.name = item.commit.author.name;
 						doc.email = item.commit.author.email;
-						db = http.request(optionsdb, handle_response);
+						db = http.request(opts, handle_response);
 						db.write(JSON.stringify(doc));
 						db.end();
 					}
@@ -407,7 +409,7 @@ function load_orgs() {
                 Promise.resolve(get_lastpolled(repo)
                     .then (function (result) {
                         var since = '&since=' + result;
-                        //console.log('--- LOAD_ORGS: ' + optionsdb.path, result);
+                        //console.log('--- LOAD_ORGS: ' + t.opts.path, result);
 
                         // get commits
                         t.func = get_commits;
@@ -424,7 +426,7 @@ function load_orgs() {
                         //console.log('--- LOAD ORGS: get_pull_requests: ' + s.opts.path);
 
                         // get stargazers
-                        u.func = get_stargazers;
+/*                        u.func = get_stargazers;
                         u.opts.method = 'GET'
                         u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + since + token;
                         u.opts.headers = {
@@ -434,7 +436,7 @@ function load_orgs() {
                         };  // see https://developer.github.com/v3/activity/starring
                         //T.throttle(u);
                         throttle(u);
-                        //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);
+                        //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);*/
                     })
                     .catch(function (reason) {
                         throw new Error('LOAD_ORGS: error: ', reason.response.statusCode, reason.error.message);
