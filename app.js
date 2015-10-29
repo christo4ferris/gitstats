@@ -1,23 +1,16 @@
 /*eslint-env node */
-var http            = require('http');
-var events          = require('events');
-var crypto          = require('crypto');
-var has             = require('./src/has');
-var clone           = require('./src/clone');
+var http              = require('http');
+var events            = require('events');
+var crypto            = require('crypto');
+var has               = require('./src/has');
+var clone             = require('./src/clone');
 //var Throttler       = require('./src/throttle');
-var parse_link      = require('./src/parse_link');
-var handle_response = require('./src/handle_response');
-var config          = require('./config');
-var orgs            = require(config.orgsfile);
+var parse_link        = require('./src/parse_link');
+var handle_response   = require('./src/handle_response');
+var config            = require('./config');
+var orgs              = require(config.orgsfile);
 
 var eventEmitter    = new events.EventEmitter();
-
-//var port          = config.port || 3000;
-//var host          = config.host || 'localhost';
-
-//var T               = new Throttler(config);
-
-//require(path.join(__dirname, 'routes.js'))(app); // load our routes and pass in our app, config, and fully configured passport
 
 var optionsdb = {
 	hostname: config.db.url,
@@ -34,6 +27,13 @@ var options = {
 };
 options.headers = {};
 options.headers['User-Agent'] = config.auth.clientid;
+
+//var port          = config.port || 3000;
+//var host          = config.host || 'localhost';
+
+//var T               = new Throttler(config);
+
+//require(path.join(__dirname, 'routes.js'))(app); // load our routes and pass in our app, config, and fully configured passport
 
 // Use this for a personal (OAUTH) token
 //options.headers.Authorization = new String('token ' + config.auth.secret);
@@ -54,7 +54,8 @@ var stack = [];
 
 function process_queue() {
     var item = stack.shift();
-    console.log("PROCESS_QUEUE: ",item.func.name,item.opts.path);
+    var r = item.opts.path.split('/');
+    console.log("PROCESS_QUEUE: ",item.func.name,Array(21-item.func.name.length).join(' '),r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3]);
     https.request(item.opts, item.func).end();
     if (stack.length === 0) {
         clearInterval(timer);
@@ -89,8 +90,8 @@ function get_more(response, func) {
             }
 			//T.throttle(t);
             throttle(t);
-			//console.log(response.headers.link);
-			console.log('GET_MORE: ',func.name + ': ' + t.opts.path);
+            var r = t.opts.path.split('/');
+			console.log('GET_MORE     : ',func.name,Array(21-func.name.length).join(' '), 'repo ID: ' + r[2]);
 		}
 	}
 }
@@ -123,18 +124,27 @@ function get_stargazers(response) {
 				var r = response.socket._httpMessage.path.split('/');
 				doc.type = 'event';
                 doc.event = 'stargazer';
-				doc.org = r[2];
-				doc.repo = r[3];
-				doc.repofullname = r[2] + '/' + r[3];
                 doc.date = item.starred_at
-                doc.user = item.user.login;
-                doc.user_id = item.user.id;
+                doc.login = item.user.login;
+                doc.login_id = item.user.id;
 				var date = new Date(doc.date);
 				doc.week = date.getWeekNo();
+
+                // Get the repo full name, or the repo ID
+                // The response body for events does not contain the name or ID of the
+                // repository, and the nature of the throttling we are performing
+                // is such that we can't pass that information down the chain.
+                // If there are <100 results, than the response header will contains the
+                // repo name.  If there are >100 events, the paging mechanism will
+                // return a response header that contains the repo ID.  We capture
+                // whichever of those are available, and will perform post-processing
+                // elsewhere to ensure both fields are populated.
+                r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = r[2] + '/' + r[3];
+
 				var db = http.request(opts, handle_response);
 				db.write(JSON.stringify(doc));
 				db.end();
-				console.log('GET_STARGAZERS: ', doc.repo, doc.date, doc.user, doc.user_id, opts.path);
+				//console.log('GET_STARGAZERS: ', doc.date, doc.user, doc.user_id, opts.path);
 			}
 			catch (err) {
                 //console.log('GET_STARGAZERS: item: ',item);
@@ -176,7 +186,7 @@ function get_pull_requests(response) {
 				doc.state = item.state;
 				doc.date = item.created_at;
 				doc.commits = item.commits_url;
-				doc.user = item.user.login;
+				doc.login = item.user.login;
 				var date = new Date(doc.date);
 				doc.week = date.getWeekNo();
 				doc.url = item.url;
@@ -249,7 +259,7 @@ function get_commits(response) {
 						db.write(JSON.stringify(doc));
 						db.end();
 					}
-					//console.log('adding commit for author: ',doc.sha,doc.name);
+                    //console.log('GET_COMMITS: ', doc.sha);
 				}
 				catch (err) {
 					console.log(err);
@@ -444,7 +454,7 @@ function load_orgs() {
                         // get stargazers
                         u.func = get_stargazers;
                         u.opts.method = 'GET'
-                        u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + since + token;
+                        u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + token;  // event api does not offer a "since" atttribute
                         u.opts.headers = {
                             'Accept': 'application/vnd.github.v3.star+json',
                             'User-Agent': 'gitstats',
