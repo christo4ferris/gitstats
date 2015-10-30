@@ -25,6 +25,15 @@ var options = {
 	port: 443,
 	method: 'GET'
 };
+
+var options_es = {
+	hostname: config.es.host,
+	path: '/',
+	port: config.es.port,
+	method: 'GET',
+	keepAlive: true
+}
+
 options.headers = {};
 options.headers['User-Agent'] = config.auth.clientid;
 
@@ -338,6 +347,19 @@ function delete_db() {
 	}).end();
 }
 
+function init_db() {
+    var doc = {};
+    var opts = clone(optionsdb);
+    opts.path = '/' + config.db.name +'/_design/views';
+    doc.views = {
+        "pull_requests": {"map":"function(doc) {\n\tif (doc.type === 'pull_request') {\n\t\tvar es_doc = {};\n\t\tes_doc._rev = doc._rev;\n\t\tes_doc.org = doc.org;\n\t\tes_doc.repo = doc.repo;\n\t\tes_doc.login = doc.login;\n\t\tes_doc.name = doc.name;\n\t\tes_doc.email = doc.email;\n\t\tes_doc.date = doc.date;\n\t\tes_doc.url = doc.url;\n\t\temit(doc.repofullname,es_doc);\n\t}\n}","reduce":"_count"},
+        "commits": {"map":"function(doc) {\n\tif (doc.type === 'commit') {\n\t\tvar es_doc = {};\n\t\tes_doc._rev = doc._rev;\n\t\tes_doc.org = doc.org;\n\t\tes_doc.repo = doc.repo;\n\t\tes_doc.login = doc.login;\n\t\tes_doc.name = doc.name;\n\t\tes_doc.email = doc.email;\n\t\tes_doc.date = doc.date;\n\t\tes_doc.url = doc.url;\n\t\temit(doc.repofullname,es_doc);\n\t}\n}","reduce":"_count"}
+    }
+    doc.language = 'javascript';
+    var db = http.request(opts, handle_response);
+    db.write(JSON.stringify(doc));
+    db.end();
+}
 
 function create_db() {
     var opts = clone(optionsdb);
@@ -345,6 +367,7 @@ function create_db() {
 	opts.method = 'PUT';
 	http.request(opts, function(response) {
 		if (response.statusCode == 201) {
+        init_db();
 		console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
 		eventEmitter.emit('couch_db_created');
 		}
@@ -473,12 +496,31 @@ function load_orgs() {
 	}
 }
 
+function sync_es(){
+    var opts = clone(options_es);
+    opts.path = '/_bulk';
+    opts.method = 'POST';
+    var action = { "index" : { "_index" : "cloudviz---agentless-system-crawler", "_type" : "commit", "_id" : "262900e8ca69293e5493553545cb51c87aedb1b9" } };
+    var source = { "doc":{"_rev": "1-4cb1e8f1be4a094aa28ec4960a679bef","org": "cloudviz","repo": "agentless-system-crawler","login": "cloudviz","name": "CLOUD VIZ","email": "cloudviz2015@gmail.com","date": "2015-07-20T18:34:40Z","url": "https://api.github.com/repos/cloudviz/agentless-system-crawler/commits/262900e8ca69293e5493553545cb51c87aedb1b9"}};
+    var action2 = { "index" : { "_index" : "cloudviz---agentless-system-crawler", "_type" : "commit", "_id" : "262900e8ca69293e5493553545cb51c87aedb110" } };
+    var source2 = { "doc":{"_rev": "1-4cb1e8f1be4a094aa28ec4960a679bef","org": "cloudviz","repo": "agentless-system-crawler","login": "cloudviz","name": "CLOUD VIZ","email": "cloudviz2015@gmail.com","date": "2015-07-20T18:34:40Z","url": "https://api.github.com/repos/cloudviz/agentless-system-crawler/commits/262900e8ca69293e5493553545cb51c87aedb1b9"}};
+    var action3 = { "index" : { "_index" : "node-red---node-red", "_type" : "commit", "_id" : "262900e8ca69293e5493553545cb51c87aedb111" } };
+    var source3 = { "doc":{"_rev": "1-4cb1e8f1be4a094aa28ec4960a679bef","org": "cloudviz","repo": "agentless-system-crawler","login": "cloudviz","name": "CLOUD VIZ","email": "cloudviz2015@gmail.com","date": "2015-07-20T18:34:40Z","url": "https://api.github.com/repos/cloudviz/agentless-system-crawler/commits/262900e8ca69293e5493553545cb51c87aedb1b9"}};
+
+    var db = http.request(opts, handle_response);
+    var body = JSON.stringify(action) + '\n' + JSON.stringify(source) + '\n' + JSON.stringify(action2) + '\n' + JSON.stringify(source2) + '\n' + JSON.stringify(action3) + '\n' + JSON.stringify(source3) + '\n';
+    console.log(body);
+    db.write(body);
+    db.end();
+}
 
 function print_help(){
-    console.log('Usage: node app.js [arguments]\n\n');
+    console.log('\nUsage: node app.js [option]\n');
     console.log('Options:');
-    console.log('  -h, --help         print help (this message)');
-    console.log('  --deletedb         delete database (a database will automatically be created)');
+    console.log('\t-c, --collect\tcreate a database (if necessary) and collect stats generated since the last run');
+    console.log('\t--deletedb\tre-create the database and collect stats');
+    console.log('\t--es\t\tupdate ElasticSearch indexes');
+    console.log('\t-h, --help\tprint help (this message)\n');
 }
 
 eventEmitter.once('couch_db_exists', load_orgs);
@@ -489,17 +531,17 @@ eventEmitter.once('couch_ready', load_orgs);
 
 var arg_deletedb  = process.argv.indexOf('--deletedb') != -1 ? true : false;
 var arg_help      = (process.argv.indexOf('-h') != -1) || (process.argv.indexOf('--help') != -1) ? true : false;
+var arg_collect   = (process.argv.indexOf('-c') != -1) || (process.argv.indexOf('--collect') != -1) ? true : false;
+var arg_es        = process.argv.indexOf('--es') != -1 ? true : false;
 
-if (arg_help) {
-    print_help();
-    process.exit();
-}
+if (arg_help || (process.argv.length===2)) print_help();
 
-if (arg_deletedb) {
-    delete_db();
-} else {
-    create_db();
-}
+if (arg_deletedb) delete_db();
+
+if (arg_collect) create_db();
+
+if (arg_es) sync_es();
+
 
 /*
 app.listen(port, host, initData);
