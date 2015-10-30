@@ -1,0 +1,5 @@
+[
+    {"name":"Open-I-Beam", "type":"org"},
+    {"name":"ibm-bioinformatics", "type":"user"},
+    {"name":"cognitive-catalyst/cognitive-catalyst", "type":"repo"},
+]
