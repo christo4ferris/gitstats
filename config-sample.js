@@ -4,7 +4,7 @@ module.exports = {
     'orgsfile': './orgs-sample.json',
     'collect_commits': true,
     'collect_pull_requests': true,
-    'timer': 720,
+    'interval': 720,
     'port': 80,
     'host': 'localhost',
     'auth': {
