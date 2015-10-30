@@ -1,21 +1,26 @@
 /*eslint-env node */
-var http              = require('http');
-var events            = require('events');
-var crypto            = require('crypto');
-var has               = require('./src/has');
 var clone             = require('./src/clone');
-//var Throttler       = require('./src/throttle');
-var parse_link        = require('./src/parse_link');
-var handle_response   = require('./src/handle_response');
 var config            = require('./config');
+var crypto            = require('crypto');
+var events            = require('events');
+var handle_response   = require('./src/handle_response');
+var has               = require('./src/has');
+var http              = require('http');
 var orgs              = require(config.orgsfile);
+var parse_link        = require('./src/parse_link');
+//var Throttler       = require('./src/throttle');
 
+var GitCollector  = require('./src/gitcollector2');
+var G             = new GitCollector(optionsdb);
+G.get_stargazers();
+
+var token = '';
 var eventEmitter    = new events.EventEmitter();
 
 var optionsdb = {
-	hostname: config.db.url,
+	hostname: config.db.host,
 	path: '/',
-	port: 5984,
+	port: config.db.port,
 	method: 'PUT',
 	keepAlive: true
 };
@@ -42,13 +47,32 @@ options.headers['User-Agent'] = config.auth.clientid;
 
 //var T               = new Throttler(config);
 
+
+
 //require(path.join(__dirname, 'routes.js'))(app); // load our routes and pass in our app, config, and fully configured passport
 
 // Use this for a personal (OAUTH) token
-//options.headers.Authorization = new String('token ' + config.auth.secret);
+if ((config.auth.token === '') && (config.auth.clientid === '') && (config.auth.secret === '') ) {
+  console.log('---: GitHub credentials not provided.  You MUST provide a personal access token or a registered application id/secret.')
+  process.exit();
+}
+
+if ((config.auth.token === '') && ((config.auth.clientid === '') || (config.auth.secret === '') )) {
+  console.log('---: Incomplete GitHub credentials not provided.  You MUST provide a personal access token or a registered application id/secret.')
+  process.exit();
+}
+
+if ((config.auth.clientid != '') && (config.auth.secret != '')){
+  token = '&client_id=' + config.auth.clientid + '&client_secret=' + config.auth.secret;
+  //console.log('---: Using REGISTERED APPLICATION credentials');
+}
+else {
+  token = '&access_token=' + config.auth.token;
+  //console.log('---: Using PERSONAL ACCESSS token');
+}
 
 // Use this for a registered app token
-var token = '&client_id=' + config.auth.clientid + '&client_secret=' + config.auth.secret;
+//
 
 Date.prototype.getWeekNo = function(){
 	var d = new Date(+this);
@@ -110,7 +134,6 @@ function get_stargazers(response) {
 	var body = '';
 	if (response.statusCode != 200) {
 		console.log('get_stargazers: ' + response.socket._httpMessage.path + ' moving on... status:' + response.statusCode);
-		console.log('headers1: ', response.headers);
 		return;
 	}
 	get_more(response, get_stargazers);
@@ -514,7 +537,19 @@ function sync_es(){
     db.end();
 }
 
-function print_help(){
+eventEmitter.once('couch_db_exists', load_orgs);
+eventEmitter.once('couch_db_not_exist', create_db);
+eventEmitter.once('couch_db_created', load_orgs);
+eventEmitter.once('couch_db_deleted', create_db);
+eventEmitter.once('couch_ready', load_orgs);
+
+var args = process.argv;
+var arg_deletedb  = args.indexOf('--deletedb') != -1 ? true : false;
+var arg_help      = (args.indexOf('-h') != -1) || (args.indexOf('--help') != -1) ? true : false;
+var arg_collect   = (args.indexOf('-c') != -1) || (args.indexOf('--collect') != -1) ? true : false;
+var arg_es        = args.indexOf('--es') != -1 ? true : false;
+
+if (arg_help || (args.length===2)) {
     console.log('\nUsage: node app.js [option]\n');
     console.log('Options:');
     console.log('\t-c, --collect\tcreate a database (if necessary) and collect stats generated since the last run');
@@ -523,24 +558,15 @@ function print_help(){
     console.log('\t-h, --help\tprint help (this message)\n');
 }
 
-eventEmitter.once('couch_db_exists', load_orgs);
-eventEmitter.once('couch_db_not_exist', create_db);
-eventEmitter.once('couch_db_created', load_orgs);
-eventEmitter.once('couch_db_deleted', create_db);
-eventEmitter.once('couch_ready', load_orgs);
-
-var arg_deletedb  = process.argv.indexOf('--deletedb') != -1 ? true : false;
-var arg_help      = (process.argv.indexOf('-h') != -1) || (process.argv.indexOf('--help') != -1) ? true : false;
-var arg_collect   = (process.argv.indexOf('-c') != -1) || (process.argv.indexOf('--collect') != -1) ? true : false;
-var arg_es        = process.argv.indexOf('--es') != -1 ? true : false;
-
-if (arg_help || (process.argv.length===2)) print_help();
-
 if (arg_deletedb) delete_db();
 
 if (arg_collect) create_db();
 
 if (arg_es) sync_es();
+
+if (!(arg_deletedb && arg_help && arg_collect && arg_es)) {
+    console.log('\n--- GITSTATS: No known argument provided - did you forget to use "-" or "--"?  Use -h for help!');
+}
 
 
 /*
