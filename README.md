@@ -33,7 +33,7 @@ Open `config.js` in a text editor and update as described below:
 'orgsfile': './orgs-sample.json',   [point at your org file, see 'Create an org file']
 'collect_commits': true,            [true or false]
 'collect_pull_requests': true,      [true or false]
-'timer': 720,                       [github request throttle in milliseconds
+'interval': 720,                    [github processing interval in milliseconds
                                      DO NOT set this value below 720]
 'port': 80,                         [gitstats application port]
 'host': 'localhost',                [gitstats application host]
