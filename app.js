@@ -1,15 +1,42 @@
 /*eslint-env node */
-var http            = require('http');
-var events          = require('events');
-var has             = require('./src/has');
-var clone           = require('./src/clone');
+var http              = require('http');
+var events            = require('events');
+var crypto            = require('crypto');
+var has               = require('./src/has');
+var clone             = require('./src/clone');
 //var Throttler       = require('./src/throttle');
-var parse_link      = require('./src/parse_link');
-var handle_response = require('./src/handle_response');
-var config          = require('./config');
-var orgs            = require(config.orgsfile);
+var parse_link        = require('./src/parse_link');
+var handle_response   = require('./src/handle_response');
+var config            = require('./config');
+var orgs              = require(config.orgsfile);
 
 var eventEmitter    = new events.EventEmitter();
+
+var optionsdb = {
+	path: '/',
+	hostname: config.db.host,
+	port: config.db.port,
+	method: 'PUT',
+	keepAlive: true
+};
+console.log('optionsdb: ' + JSON.stringify(optionsdb));
+
+var options = {
+	hostname: 'api.github.com',
+	port: 443,
+	method: 'GET'
+};
+
+var options_es = {
+	hostname: config.es.host,
+	path: '/',
+	port: config.es.port,
+	method: 'GET',
+	keepAlive: true
+}
+
+options.headers = {};
+options.headers['User-Agent'] = config.auth.clientid;
 
 //var port          = config.port || 3000;
 //var host          = config.host || 'localhost';
@@ -17,22 +44,6 @@ var eventEmitter    = new events.EventEmitter();
 //var T               = new Throttler(config);
 
 //require(path.join(__dirname, 'routes.js'))(app); // load our routes and pass in our app, config, and fully configured passport
-
-var optionsdb = {
-	hostname: config.db.url,
-	path: '/',
-	port: config.db.port,
-	method: 'PUT',
-	keepAlive: true
-};
-
-var options = {
-	hostname: 'api.github.com',
-	port: 443,
-	method: 'GET'
-};
-options.headers = {};
-options.headers['User-Agent'] = config.auth.clientid;
 
 // Use this for a personal (OAUTH) token
 //options.headers.Authorization = new String('token ' + config.auth.secret);
@@ -51,9 +62,10 @@ var https = require('https');
 var timer = null;
 var stack = [];
 
-function process() {
+function process_queue() {
     var item = stack.shift();
-    console.log("process: " + item.opts.path);
+    var r = item.opts.path.split('/');
+    console.log("PROCESS_QUEUE: ",item.func.name,Array(21-item.func.name.length).join(' '),r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3]);
     https.request(item.opts, item.func).end();
     if (stack.length === 0) {
         clearInterval(timer);
@@ -64,7 +76,7 @@ function process() {
 function throttle(item) {
     stack.push(item);
     if (timer === null) {
-      timer = setInterval(process, config.interval);
+      timer = setInterval(process_queue, config.interval);
     }
 }
 
@@ -77,12 +89,80 @@ function get_more(response, func) {
 			t.func = func;
 			t.opts = clone(options);
 			t.opts.path = links['next'].substring(22, links['next'].length);
+
+            if (func.name === 'get_stargazers') {
+                // add media headers for GET_STARGAZERS
+                t.opts.headers = {
+                    'Accept': 'application/vnd.github.v3.star+json',
+                    'User-Agent': 'gitstats',
+                    'Content-Type': 'application/json'
+                }  // see https://developer.github.com/v3/activity/starring
+            }
 			//T.throttle(t);
             throttle(t);
-			console.log(response.headers.link);
-			console.log(func.name + ': ' + t.opts.path);
+            var r = t.opts.path.split('/');
+			console.log('GET_MORE     : ',func.name,Array(21-func.name.length).join(' '), 'repo ID: ' + r[2]);
 		}
 	}
+}
+
+function get_stargazers(response) {
+    var opts = clone(optionsdb);
+	var body = '';
+	if (response.statusCode != 200) {
+		console.log('get_stargazers: ' + response.socket._httpMessage.path + ' moving on... status:' + response.statusCode);
+		console.log('headers1: ', response.headers);
+		return;
+	}
+	get_more(response, get_stargazers);
+	response.on('error', function(e) {
+		console.error(e);
+	});
+	response.on('data', function(d) {
+		body += d;
+	});
+	response.on('end', function() {
+		var parsed = JSON.parse(body);
+		var doc = {};
+		parsed.forEach(function (item) {
+			try {
+                // create a sha digest to be used as the docid
+                var shasum = crypto.createHash('sha1');
+                shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
+                var digest = shasum.digest('hex');
+				opts.path = '/' + config.db.name + '/' + digest;
+				var r = response.socket._httpMessage.path.split('/');
+				doc.type = 'event';
+                doc.event = 'stargazer';
+                doc.date = item.starred_at
+                doc.login = item.user.login;
+                doc.login_id = item.user.id;
+				var date = new Date(doc.date);
+				doc.week = date.getWeekNo();
+
+                // Get the repo full name, or the repo ID
+                // The response body for events does not contain the name or ID of the
+                // repository, and the nature of the throttling we are performing
+                // is such that we can't pass that information down the chain.
+                // If there are <100 results, than the response header will contains the
+                // repo name.  If there are >100 events, the paging mechanism will
+                // return a response header that contains the repo ID.  We capture
+                // whichever of those are available, and will perform post-processing
+                // elsewhere to ensure both fields are populated.
+                r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = r[2] + '/' + r[3];
+
+				var db = http.request(opts, handle_response);
+				db.write(JSON.stringify(doc));
+				db.end();
+				//console.log('GET_STARGAZERS: ', doc.date, doc.user, doc.user_id, opts.path);
+			}
+			catch (err) {
+                //console.log('GET_STARGAZERS: item: ',item);
+                console.log('GET_STARGAZERS: path: ',response.socket._httpMessage.path)
+				console.log(err);
+			}
+		});
+	});
 }
 
 function get_pull_requests(response) {
@@ -104,9 +184,10 @@ function get_pull_requests(response) {
 		var doc = {};
 		parsed.forEach(function (item) {
 			try {
-				optionsdb.path = '/' + config.db.name + '/' + item.head.sha;
+                var opts = clone(optionsdb);
+				opts.path = '/' + config.db.name + '/' + item.head.sha;
 				var r = item.url.split('/');
-				doc.type = 'pull_request'
+				doc.type = 'pull_request';
 				doc.org = r[4];
 				doc.repo = r[5];
 				doc.repofullname = r[4] + '/' + r[5];
@@ -115,23 +196,23 @@ function get_pull_requests(response) {
 				doc.state = item.state;
 				doc.date = item.created_at;
 				doc.commits = item.commits_url;
-				doc.user = item.user.login;
+				doc.login = item.user.login;
 				var date = new Date(doc.date);
 				doc.week = date.getWeekNo();
 				doc.url = item.url;
-				var db = http.request(optionsdb, handle_response);
+				var db = http.request(opts, handle_response);
 				db.write(JSON.stringify(doc));
 				db.end();
 				// account for pairing situations
-				// TODO - I think that we need to insert with a new id - hence optionsdb.path needs to be different than above
+				// TODO - I think that we need to insert with a new id - hence opts.path needs to be different than above
 				if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
 					doc.name = item.commit.author.name;
 					doc.email = item.commit.author.email;
-					db = http.request(optionsdb, handle_response);
+					db = http.request(opts, handle_response);
 					db.write(JSON.stringify(doc));
 					db.end();
 				}
-				console.log('adding pull for author: ',doc.sha,doc.name);
+				//console.log('adding pull for author: ',doc.sha,doc.name);
 			}
 			catch (err) {
 				console.log(err);
@@ -160,9 +241,10 @@ function get_commits(response) {
 			var doc = {};
 			parsed.forEach(function (item) {
 				try {
-					optionsdb.path = '/' + config.db.name + '/' + item.sha;
+                    var opts = clone(optionsdb)
+					opts.path = '/' + config.db.name + '/' + item.sha;
 					var r = item.url.split('/');
-					doc.type = 'commit'
+					doc.type = 'commit';
 					doc.org = r[4];
 					doc.repo = r[5];
 					doc.repofullname = r[4] + '/' + r[5];
@@ -176,18 +258,18 @@ function get_commits(response) {
 					date.setDate(doc.date);
 					doc.week = date.getWeekNo();
 					doc.url = item.url;
-					var db = http.request(optionsdb, handle_response);
+					var db = http.request(opts, handle_response);
 					db.write(JSON.stringify(doc));
 					db.end();
 					// account for pairing situations
 					if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
 						doc.name = item.commit.author.name;
 						doc.email = item.commit.author.email;
-						db = http.request(optionsdb, handle_response);
+						db = http.request(opts, handle_response);
 						db.write(JSON.stringify(doc));
 						db.end();
 					}
-					console.log('adding commit for author: ',doc.sha,doc.name);
+                    //console.log('GET_COMMITS: ', doc.sha);
 				}
 				catch (err) {
 					console.log(err);
@@ -218,6 +300,7 @@ function get_repos(response) {
 			var t = new Object();
 			var r = item.full_name.split('/');
 			t.opts = clone(options);
+
 			// get commits
 			t.func = get_commits;
 			t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100'  + token;
@@ -236,11 +319,12 @@ function get_repos(response) {
 		});
 	});
 }
-/*
+
 function delete_db() {
-	optionsdb.path = '/' + config.db.name;
-	optionsdb.method = 'DELETE';
-	http.request(optionsdb, function(response) {
+    var opts = clone(optionsdb);
+	opts.path = '/' + config.db.name;
+	opts.method = 'DELETE';
+	http.request(opts, function(response) {
 		if (response.statusCode == 200) {
 		console.log('--- DELETE_DB: ' + config.db.name + ' has been deleted.');
 		eventEmitter.emit('couch_db_deleted');
@@ -263,13 +347,28 @@ function delete_db() {
 		console.error(e);
 	}).end();
 }
-*/
+
+function init_db() {
+    var doc = {};
+    var opts = clone(optionsdb);
+    opts.path = '/' + config.db.name +'/_design/views';
+    doc.views = {
+        "pull_requests": {"map":"function(doc) {\n\tif (doc.type === 'pull_request') {\n\t\tvar es_doc = {};\n\t\tes_doc._rev = doc._rev;\n\t\tes_doc.org = doc.org;\n\t\tes_doc.repo = doc.repo;\n\t\tes_doc.login = doc.login;\n\t\tes_doc.name = doc.name;\n\t\tes_doc.email = doc.email;\n\t\tes_doc.date = doc.date;\n\t\tes_doc.url = doc.url;\n\t\temit(doc.repofullname,es_doc);\n\t}\n}","reduce":"_count"},
+        "commits": {"map":"function(doc) {\n\tif (doc.type === 'commit') {\n\t\tvar es_doc = {};\n\t\tes_doc._rev = doc._rev;\n\t\tes_doc.org = doc.org;\n\t\tes_doc.repo = doc.repo;\n\t\tes_doc.login = doc.login;\n\t\tes_doc.name = doc.name;\n\t\tes_doc.email = doc.email;\n\t\tes_doc.date = doc.date;\n\t\tes_doc.url = doc.url;\n\t\temit(doc.repofullname,es_doc);\n\t}\n}","reduce":"_count"}
+    }
+    doc.language = 'javascript';
+    var db = http.request(opts, handle_response);
+    db.write(JSON.stringify(doc));
+    db.end();
+}
 
 function create_db() {
-	optionsdb.path = '/' + config.db.name;
-	optionsdb.method = 'PUT';
-	http.request(optionsdb, function(response) {
+    var opts = clone(optionsdb);
+	opts.path = '/' + config.db.name;
+	opts.method = 'PUT';
+	http.request(opts, function(response) {
 		if (response.statusCode == 201) {
+        init_db();
 		console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
 		eventEmitter.emit('couch_db_created');
 		}
@@ -299,7 +398,7 @@ function get_lastpolled(repo) {
         var opts = clone(optionsdb);
         opts.method = 'GET';
         opts.path = '/' + config.db.name + '/' + repo.replace(/\//g, '---');
-        var result = '2016-01-01T00:00:00Z'; // default to earliest UTC value
+        var result = '1970-01-01T00:00:00Z'; // default to earliest UTC value
 
         http.request(opts, function(res){
             res.on('data', function(chunk) {
@@ -337,8 +436,10 @@ function load_orgs() {
 		orgs.forEach(function(item) {
 			var t = new Object();
 			var s = new Object();
+            var u = new Object();
 			t.opts = clone(options);
 			s.opts = clone(options);
+            u.opts = clone(options);
 
 			// if this is an 'org' or 'user', put it in the queue to enumerate into a repo
 			if((item.type == 'org') || (item.type == 'user'))  {
@@ -358,7 +459,7 @@ function load_orgs() {
                 Promise.resolve(get_lastpolled(repo)
                     .then (function (result) {
                         var since = '&since=' + result;
-                        //console.log('--- LOAD_ORGS: ' + optionsdb.path, result);
+                        //console.log('--- LOAD_ORGS: ' + t.opts.path, result);
 
                         // get commits
                         t.func = get_commits;
@@ -371,8 +472,21 @@ function load_orgs() {
                         s.func = get_pull_requests;
                         s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + token;
                         //T.throttle(s);
-                        throttle(t);
+                        throttle(s);
                         //console.log('--- LOAD ORGS: get_pull_requests: ' + s.opts.path);
+
+                        // get stargazers
+                        u.func = get_stargazers;
+                        u.opts.method = 'GET'
+                        u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + token;  // event api does not offer a "since" atttribute
+                        u.opts.headers = {
+                            'Accept': 'application/vnd.github.v3.star+json',
+                            'User-Agent': 'gitstats',
+                            'Content-Type': 'application/json'
+                        };  // see https://developer.github.com/v3/activity/starring
+                        //T.throttle(u);
+                        throttle(u);
+                        //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);
                     })
                     .catch(function (reason) {
                         throw new Error('LOAD_ORGS: error: ', reason.response.statusCode, reason.error.message);
@@ -383,14 +497,52 @@ function load_orgs() {
 	}
 }
 
+function sync_es(){
+    var opts = clone(options_es);
+    opts.path = '/_bulk';
+    opts.method = 'POST';
+    var action = { "index" : { "_index" : "cloudviz---agentless-system-crawler", "_type" : "commit", "_id" : "262900e8ca69293e5493553545cb51c87aedb1b9" } };
+    var source = { "doc":{"_rev": "1-4cb1e8f1be4a094aa28ec4960a679bef","org": "cloudviz","repo": "agentless-system-crawler","login": "cloudviz","name": "CLOUD VIZ","email": "cloudviz2015@gmail.com","date": "2015-07-20T18:34:40Z","url": "https://api.github.com/repos/cloudviz/agentless-system-crawler/commits/262900e8ca69293e5493553545cb51c87aedb1b9"}};
+    var action2 = { "index" : { "_index" : "cloudviz---agentless-system-crawler", "_type" : "commit", "_id" : "262900e8ca69293e5493553545cb51c87aedb110" } };
+    var source2 = { "doc":{"_rev": "1-4cb1e8f1be4a094aa28ec4960a679bef","org": "cloudviz","repo": "agentless-system-crawler","login": "cloudviz","name": "CLOUD VIZ","email": "cloudviz2015@gmail.com","date": "2015-07-20T18:34:40Z","url": "https://api.github.com/repos/cloudviz/agentless-system-crawler/commits/262900e8ca69293e5493553545cb51c87aedb1b9"}};
+    var action3 = { "index" : { "_index" : "node-red---node-red", "_type" : "commit", "_id" : "262900e8ca69293e5493553545cb51c87aedb111" } };
+    var source3 = { "doc":{"_rev": "1-4cb1e8f1be4a094aa28ec4960a679bef","org": "cloudviz","repo": "agentless-system-crawler","login": "cloudviz","name": "CLOUD VIZ","email": "cloudviz2015@gmail.com","date": "2015-07-20T18:34:40Z","url": "https://api.github.com/repos/cloudviz/agentless-system-crawler/commits/262900e8ca69293e5493553545cb51c87aedb1b9"}};
+
+    var db = http.request(opts, handle_response);
+    var body = JSON.stringify(action) + '\n' + JSON.stringify(source) + '\n' + JSON.stringify(action2) + '\n' + JSON.stringify(source2) + '\n' + JSON.stringify(action3) + '\n' + JSON.stringify(source3) + '\n';
+    console.log(body);
+    db.write(body);
+    db.end();
+}
+
+function print_help(){
+    console.log('\nUsage: node app.js [option]\n');
+    console.log('Options:');
+    console.log('\t-c, --collect\tcreate a database (if necessary) and collect stats generated since the last run');
+    console.log('\t--deletedb\tre-create the database and collect stats');
+    console.log('\t--es\t\tupdate ElasticSearch indexes');
+    console.log('\t-h, --help\tprint help (this message)\n');
+}
+
 eventEmitter.once('couch_db_exists', load_orgs);
 eventEmitter.once('couch_db_not_exist', create_db);
 eventEmitter.once('couch_db_created', load_orgs);
 eventEmitter.once('couch_db_deleted', create_db);
 eventEmitter.once('couch_ready', load_orgs);
 
-//delete_db();
-create_db();
+var arg_deletedb  = process.argv.indexOf('--deletedb') != -1 ? true : false;
+var arg_help      = (process.argv.indexOf('-h') != -1) || (process.argv.indexOf('--help') != -1) ? true : false;
+var arg_collect   = (process.argv.indexOf('-c') != -1) || (process.argv.indexOf('--collect') != -1) ? true : false;
+var arg_es        = process.argv.indexOf('--es') != -1 ? true : false;
+
+if (arg_help || (process.argv.length===2)) print_help();
+
+if (arg_deletedb) delete_db();
+
+if (arg_collect) create_db();
+
+if (arg_es) sync_es();
+
 
 /*
 app.listen(port, host, initData);

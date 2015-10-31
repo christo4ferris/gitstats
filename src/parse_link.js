@@ -13,8 +13,8 @@ module.exports = function (header) {
 		}
 		var url = section[0].replace(/<(.*)>/, '$1').trim();
 		var name = section[1].replace(/rel="(.*)"/, '$1').trim();
-		console.log('url= ' + url);
-		console.log('name= ' + name);
+		//console.log('url= ' + url);
+		//console.log('name= ' + name);
 		links[name] = url;
 	}
 	return links;
