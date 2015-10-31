@@ -21,7 +21,7 @@ var eventEmitter    = new events.EventEmitter();
 var optionsdb = {
 	hostname: config.db.url,
 	path: '/',
-	port: 5984,
+	port: config.db.port,
 	method: 'PUT',
 	keepAlive: true
 };
