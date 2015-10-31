@@ -1,0 +1,39 @@
+{
+  "mappings":{
+    "logs":{
+      "properties":{
+        "@timestamp":{
+          "type":"date",
+          "format":"dateOptionalTime"
+        },
+        "@version":{
+          "type":"string"
+        },
+        "doc":{
+          "properties":{
+            "commits":{"type":"string"},
+            "date":{
+              "type":"date",
+              "format":"dateOptionalTime"
+            },
+            "email":{"type":"string", "index" : "not_analyzed"},
+            "event":{"type":"string"},
+            "language":{"type":"string"},
+            "login":{"type":"string"},
+            "login_id":{"type":"long"},
+            "name":{"type":"string", "index" : "not_analyzed"},
+            "number":{"type":"long"},
+            "org":{"type":"string", "index" : "not_analyzed"},
+            "repo":{"type":"string", "index" : "not_analyzed"},
+            "repo_id":{"type":"string"},
+            "repofullname":{"type":"string", "index" : "not_analyzed"},
+            "sha":{"type":"string"},
+            "state":{"type":"string"},
+            "type":{"type":"string"},
+            "url":{"type":"string"}
+          }
+        }
+      }
+    }
+  }
+}

@@ -13,12 +13,13 @@ var orgs              = require(config.orgsfile);
 var eventEmitter    = new events.EventEmitter();
 
 var optionsdb = {
-	hostname: config.db.url,
 	path: '/',
-	port: 5984,
+	hostname: config.db.host,
+	port: config.db.port,
 	method: 'PUT',
 	keepAlive: true
 };
+console.log('optionsdb: ' + JSON.stringify(optionsdb));
 
 var options = {
 	hostname: 'api.github.com',
