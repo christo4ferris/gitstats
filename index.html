@@ -1,81 +1,18 @@
 <DOCCTYPE html>
 <html>
     <head>
-        <title>dWOpen Project Commitsi Dashboard</title>
+      <title>OSS Dashboard</title>
         <!-- external libs from cdnjs -->
-	<script type="text/javascript" src="https://www.google.com/jsapi"></script>
-        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
-        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.11.4/jquery-ui.min.js"></script>
-
-        <!-- PivotTable.js libs from ../dist -->
-        <link rel="stylesheet" type="text/css" href="dist/pivot.css">
-        <script type="text/javascript" src="dist/pivot.js"></script>
-        <script type="text/javascript" src="dist/nrecopivot.js"></script>
-	<script type="text/javascript" src="../dist/gchart_renderers.js"></script>
-        
-        <style>
-		body {
-			font-family: Verdana; 
-			background-color: #3B4B54;
-			background-image: url('K2_Nordseite.jpg');
-			background-size: cover;
-		}
-        </style>
+    	<style>
+				body {
+					font-family: Verdana; 
+					background-color: #3B4B54;
+					background-image: url('K2_Nordseite.jpg');
+					background-size: cover;
+				}
+      </style>
     </head>
     <body>
-        <script type="text/javascript">
-	    google.load("visualization", "1", {packages:["corechart", "charteditor"]});
-            $(function(){
-	        var nrecoPivotExt = new NRecoPivotTableExtensions({
-			drillDownHandler: function (dataFilter) {
-				console.log(dataFilter);
-				
-				var filterParts = [];
-				for (var k in dataFilter) {
-					filterParts.push(k+"="+dataFilter[k]);
-				}
-				alert( filterParts.join(", "));	
-				
-			}
-		});
-		var renderers = $.extend($.pivotUtilities.renderers, 
-			                    $.pivotUtilities.gchart_renderers);
-                var derivers = $.pivotUtilities.derivers;
-                var sortAs =           $.pivotUtilities.sortAs;
-                var stdRendererNames = ["Table","Table Barchart","Heatmap","Row Heatmap","Col Heatmap"];
-		var wrappedRenderers = $.extend( {}, $.pivotUtilities.renderers);
-		$.each(stdRendererNames, function() {
-			var rName = this;
-			renderers[rName] = nrecoPivotExt.wrapTableRenderer(renderers[rName]);
-		});
-
-                $.getJSON("allcommits.json", function(commits) {
-//                function process(commits) {
-                    $("#output").pivotUI(commits, {
-                        sorters: function(attr) {
-                            if(attr == "month") {
-                                return sortAs(["Jan","Feb","Mar","Apr", "May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]);
-                            } 
-                        },
-
-//                        renderers: {wrappedRenderers, renderers},
-                        renderers: renderers,
-			rendererOptions: { sort: { direction : "desc", column_key : [ "Totals" ]} },
-                        hiddenAttributes: ["_rev", "_id", "repoid", "created","sha","date"],
-                        //rows: ["reponame"],
-                        cols: ["year", "month"],
-                        rows: ["ibm"],
-                        aggregatorName: "Integer Sum",
-                        //rendererName: "Heatmap"
-                        rendererName: "Area Chart"
-                    });
-                });
-             });
-        </script>
-	<center><h1 style="color: #fff; ">IBM Open Source Commits Dashboard</h1></center>
-		<div id="output" style="margin: 30px;"></div></div>
-<br/> 
-<p style="color: #fff; width: 800px; margin: 30px;">Choose 'commits' in the pull-down menu under 'Integer Sum', in the table above.<br/><br/> This pivot table is mutable. Columns can be sorted ascending or descending. You can also add additional attributes to be explored by dragging the labels to the colum or row bar. Finally, you can change the type of table to render.  - <a href="mailto:chrisfer@us.ibm.com">Christopher Ferris</a></p>
-
+						<iframe src="http://192.168.99.100:32770/#/dashboard/OSS-Dashboard?embed&_a=(filters:!(),panels:!((col:1,id:Top-50-Committers,row:9,size_x:6,size_y:5,type:visualization),(col:1,id:Open-Source-Commits,row:5,size_x:6,size_y:4,type:visualization),(col:1,id:Metrics,row:1,size_x:6,size_y:4,type:visualization)),query:(query_string:(analyze_wildcard:!t,query:'doc.type:%20%22commit%22%20AND%20doc.email:%20*ibm.com')),title:'OSS%20Dashboard')&_g=(filters:!(),refreshInterval:(display:Off,pause:!f,section:0,value:0),time:(from:now%2Fy,mode:quick,to:now))" height="1350" width="800"></iframe>
     </body>
 </html>
