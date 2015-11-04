@@ -1,31 +1,39 @@
 /*eslint-env node */
-var http              = require('http');
 var events            = require('events');
 var crypto            = require('crypto');
 var has               = require('./src/has');
 var clone             = require('./src/clone');
+var http              = require('http');
+var https             = require('https');
 //var Throttler       = require('./src/throttle');
 var parse_link        = require('./src/parse_link');
 var handle_response   = require('./src/handle_response');
 var config            = require('./config');
 var orgs              = require(config.orgsfile);
 
-var eventEmitter    = new events.EventEmitter();
+var token             = '';
+var eventEmitter      = new events.EventEmitter();
+var db_protocol       = config.db.protocol === 'https:' ? https : http;
 
 var optionsdb = {
-	path: '/',
-	hostname: config.db.host,
+    protocol: config.db.protocol,
+	path: '/' + config.db.name,
+	host: config.db.host,
 	port: config.db.port,
+    url: config.db.protocol + '//' + config.db.user + ':' + config.db.password + '@' + config.db.host,
+    headers: { 'Authorization': 'Basic ' + new Buffer(config.db.user + ':' + config.db.password).toString('base64')},
 	method: 'PUT',
 	keepAlive: true
 };
-console.log('optionsdb: ' + JSON.stringify(optionsdb));
 
 var options = {
 	hostname: 'api.github.com',
 	port: 443,
 	method: 'GET'
 };
+
+options.headers = {};
+options.headers['User-Agent'] = 'gitstats';
 
 var options_es = {
 	hostname: config.es.host,
@@ -35,8 +43,7 @@ var options_es = {
 	keepAlive: true
 }
 
-options.headers = {};
-options.headers['User-Agent'] = config.auth.clientid;
+
 
 //var port          = config.port || 3000;
 //var host          = config.host || 'localhost';
@@ -45,11 +52,25 @@ options.headers['User-Agent'] = config.auth.clientid;
 
 //require(path.join(__dirname, 'routes.js'))(app); // load our routes and pass in our app, config, and fully configured passport
 
-// Use this for a personal (OAUTH) token
-//options.headers.Authorization = new String('token ' + config.auth.secret);
+// set the token for GitHub queries
+if ((config.auth.token === '') && (config.auth.clientid === '') && (config.auth.secret === '') ) {
+  console.log('---: GitHub credentials not provided.  You MUST provide a personal access token or a registered application id/secret.')
+  process.exit();
+}
 
-// Use this for a registered app token
-var token = '&client_id=' + config.auth.clientid + '&client_secret=' + config.auth.secret;
+if ((config.auth.token === '') && ((config.auth.clientid === '') || (config.auth.secret === '') )) {
+  console.log('---: Incomplete GitHub credentials not provided.  You MUST provide a personal access token or a registered application id/secret.')
+  process.exit();
+}
+
+if ((config.auth.clientid != '') && (config.auth.secret != '')){
+  token = '&client_id=' + config.auth.clientid + '&client_secret=' + config.auth.secret;
+  //console.log('---: Using REGISTERED APPLICATION credentials');
+}
+else {
+  token = '&access_token=' + config.auth.token;
+  //console.log('---: Using PERSONAL ACCESSS token');
+}
 
 Date.prototype.getWeekNo = function(){
 	var d = new Date(+this);
@@ -58,7 +79,6 @@ Date.prototype.getWeekNo = function(){
 	return Math.ceil((((d-new Date(d.getFullYear(),0,1))/8.64e7)+1)/7);
 };
 
-var https = require('https');
 var timer = null;
 var stack = [];
 
@@ -66,7 +86,13 @@ function process_queue() {
     var item = stack.shift();
     var r = item.opts.path.split('/');
     console.log("PROCESS_QUEUE: ",item.func.name,Array(21-item.func.name.length).join(' '),r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3]);
-    https.request(item.opts, item.func).end();
+    var req = https.request(item.opts, item.func);
+    req.on('error', function(e) {
+        console.log('--- PROCESS_QUEUE: ', e.message);
+        console.error(e);
+    });
+    req.end();
+  
     if (stack.length === 0) {
         clearInterval(timer);
         timer = null;
@@ -111,7 +137,7 @@ function get_stargazers(response) {
 	var body = '';
 	if (response.statusCode != 200) {
 		console.log('get_stargazers: ' + response.socket._httpMessage.path + ' moving on... status:' + response.statusCode);
-		console.log('headers1: ', response.headers);
+		//console.log('headers: ', response.headers);
 		return;
 	}
 	get_more(response, get_stargazers);
@@ -130,7 +156,7 @@ function get_stargazers(response) {
                 var shasum = crypto.createHash('sha1');
                 shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
                 var digest = shasum.digest('hex');
-				opts.path = '/' + config.db.name + '/' + digest;
+				opts.path += '/' + digest;
 				var r = response.socket._httpMessage.path.split('/');
 				doc.type = 'event';
                 doc.event = 'stargazer';
@@ -151,7 +177,7 @@ function get_stargazers(response) {
                 // elsewhere to ensure both fields are populated.
                 r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = r[2] + '/' + r[3];
 
-				var db = http.request(opts, handle_response);
+				var db = db_protocol.request(opts, handle_response);
 				db.write(JSON.stringify(doc));
 				db.end();
 				//console.log('GET_STARGAZERS: ', doc.date, doc.user, doc.user_id, opts.path);
@@ -185,7 +211,7 @@ function get_pull_requests(response) {
 		parsed.forEach(function (item) {
 			try {
                 var opts = clone(optionsdb);
-				opts.path = '/' + config.db.name + '/' + item.head.sha;
+				opts.path += '/' + item.head.sha;
 				var r = item.url.split('/');
 				doc.type = 'pull_request';
 				doc.org = r[4];
@@ -200,7 +226,7 @@ function get_pull_requests(response) {
 				var date = new Date(doc.date);
 				doc.week = date.getWeekNo();
 				doc.url = item.url;
-				var db = http.request(opts, handle_response);
+				var db = db_protocol.request(opts, handle_response);
 				db.write(JSON.stringify(doc));
 				db.end();
 				// account for pairing situations
@@ -208,7 +234,7 @@ function get_pull_requests(response) {
 				if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
 					doc.name = item.commit.author.name;
 					doc.email = item.commit.author.email;
-					db = http.request(opts, handle_response);
+					db = db_protocol.request(opts, handle_response);
 					db.write(JSON.stringify(doc));
 					db.end();
 				}
@@ -242,7 +268,7 @@ function get_commits(response) {
 			parsed.forEach(function (item) {
 				try {
                     var opts = clone(optionsdb)
-					opts.path = '/' + config.db.name + '/' + item.sha;
+					opts.path += '/' + item.sha;
 					var r = item.url.split('/');
 					doc.type = 'commit';
 					doc.org = r[4];
@@ -258,14 +284,14 @@ function get_commits(response) {
 					date.setDate(doc.date);
 					doc.week = date.getWeekNo();
 					doc.url = item.url;
-					var db = http.request(opts, handle_response);
+					var db = db_protocol.request(opts, handle_response);
 					db.write(JSON.stringify(doc));
 					db.end();
 					// account for pairing situations
 					if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
 						doc.name = item.commit.author.name;
 						doc.email = item.commit.author.email;
-						db = http.request(opts, handle_response);
+						db = db_protocol.request(opts, handle_response);
 						db.write(JSON.stringify(doc));
 						db.end();
 					}
@@ -322,9 +348,8 @@ function get_repos(response) {
 
 function delete_db() {
     var opts = clone(optionsdb);
-	opts.path = '/' + config.db.name;
 	opts.method = 'DELETE';
-	http.request(opts, function(response) {
+	db_protocol.request(opts, function(response) {
 		if (response.statusCode == 200) {
 		console.log('--- DELETE_DB: ' + config.db.name + ' has been deleted.');
 		eventEmitter.emit('couch_db_deleted');
@@ -351,22 +376,22 @@ function delete_db() {
 function init_db() {
     var doc = {};
     var opts = clone(optionsdb);
-    opts.path = '/' + config.db.name +'/_design/views';
+    opts.path += '/_design/views';
     doc.views = {
         "pull_requests": {"map":"function(doc) {\n\tif (doc.type === 'pull_request') {\n\t\tvar es_doc = {};\n\t\tes_doc._rev = doc._rev;\n\t\tes_doc.org = doc.org;\n\t\tes_doc.repo = doc.repo;\n\t\tes_doc.login = doc.login;\n\t\tes_doc.name = doc.name;\n\t\tes_doc.email = doc.email;\n\t\tes_doc.date = doc.date;\n\t\tes_doc.url = doc.url;\n\t\temit(doc.repofullname,es_doc);\n\t}\n}","reduce":"_count"},
-        "commits": {"map":"function(doc) {\n\tif (doc.type === 'commit') {\n\t\tvar es_doc = {};\n\t\tes_doc._rev = doc._rev;\n\t\tes_doc.org = doc.org;\n\t\tes_doc.repo = doc.repo;\n\t\tes_doc.login = doc.login;\n\t\tes_doc.name = doc.name;\n\t\tes_doc.email = doc.email;\n\t\tes_doc.date = doc.date;\n\t\tes_doc.url = doc.url;\n\t\temit(doc.repofullname,es_doc);\n\t}\n}","reduce":"_count"}
+        "commits": {"map":"function(doc) {\n\tif (doc.type === 'commit') {\n\t\tvar es_doc = {};\n\t\tes_doc._rev = doc._rev;\n\t\tes_doc.org = doc.org;\n\t\tes_doc.repo = doc.repo;\n\t\tes_doc.login = doc.login;\n\t\tes_doc.name = doc.name;\n\t\tes_doc.email = doc.email;\n\t\tes_doc.date = doc.date;\n\t\tes_doc.url = doc.url;\n\t\temit(doc.repofullname,es_doc);\n\t}\n}","reduce":"_count"},
+        "events": {"map":"function(doc) {\n\tif (doc.type === 'event') {\n\t\temit(doc.date,doc);\n\t}\n}","reduce":"_count"}
     }
     doc.language = 'javascript';
-    var db = http.request(opts, handle_response);
+    var db = db_protocol.request(opts, handle_response);
     db.write(JSON.stringify(doc));
     db.end();
 }
 
 function create_db() {
     var opts = clone(optionsdb);
-	opts.path = '/' + config.db.name;
 	opts.method = 'PUT';
-	http.request(opts, function(response) {
+	db_protocol.request(opts, function(response) {
 		if (response.statusCode == 201) {
         init_db();
 		console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
@@ -397,10 +422,10 @@ function get_lastpolled(repo) {
         var doc = {};
         var opts = clone(optionsdb);
         opts.method = 'GET';
-        opts.path = '/' + config.db.name + '/' + repo.replace(/\//g, '---');
+        opts.path += '/' + repo.replace(/\//g, '---');
         var result = '1970-01-01T00:00:00Z'; // default to earliest UTC value
 
-        http.request(opts, function(res){
+        db_protocol.request(opts, function(res){
             res.on('data', function(chunk) {
                 if ((res.statusCode === 200) || (res.statusCode === 304)) {
                     doc = JSON.parse(chunk);
@@ -417,10 +442,10 @@ function get_lastpolled(repo) {
                 // update / create lastpolled doc
                 opts.method = 'PUT'
                 doc.date = new Date().toISOString();
-                var db = http.request(opts, handle_response);
+                var db = db_protocol.request(opts, handle_response);
                 db.write(JSON.stringify(doc))
                 db.end();
-                //console.log('--- GET_LASTPOLLED: new date: ',doc.repofullname, doc.date);
+                console.log('--- GET_LASTPOLLED: new date: ',doc.repofullname, doc.date);
                 resolve(result);
             });
             res.on('error', function(e) {
@@ -459,7 +484,6 @@ function load_orgs() {
                 Promise.resolve(get_lastpolled(repo)
                     .then (function (result) {
                         var since = '&since=' + result;
-                        //console.log('--- LOAD_ORGS: ' + t.opts.path, result);
 
                         // get commits
                         t.func = get_commits;
@@ -497,7 +521,7 @@ function load_orgs() {
 	}
 }
 
-function sync_es(){
+/*function sync_es(){
     var opts = clone(options_es);
     opts.path = '/_bulk';
     opts.method = 'POST';
@@ -513,14 +537,13 @@ function sync_es(){
     console.log(body);
     db.write(body);
     db.end();
-}
+}*/
 
 function print_help(){
     console.log('\nUsage: node app.js [option]\n');
     console.log('Options:');
     console.log('\t-c, --collect\tcreate a database (if necessary) and collect stats generated since the last run');
     console.log('\t--deletedb\tre-create the database and collect stats');
-    console.log('\t--es\t\tupdate ElasticSearch indexes');
     console.log('\t-h, --help\tprint help (this message)\n');
 }
 
@@ -541,8 +564,9 @@ if (arg_deletedb) delete_db();
 
 if (arg_collect) create_db();
 
-if (arg_es) sync_es();
-
+if (!(arg_deletedb || arg_help || arg_collect)) {
+    console.log('\n--- GITSTATS: No known argument provided - did you forget to use "-" or "--"?  Use -h for help!');
+}
 
 /*
 app.listen(port, host, initData);
