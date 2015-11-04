@@ -42,10 +42,13 @@ Open `config.js` in a text editor and update as described below:
     'secret': '',                   [client secret, GitHub registered application]
     'token': ''                     [GitHub personal access token]
 },
-'db': {
-    'name': 'sample',               [couch db name]
-    'host': 'localhost',            [couch db host]
-    'port': 5984                    [couch db port]
+'db': {                             [this section is for NoSQL db]
+    'name': 'sample',               [db name]
+    'host': 'localhost',            [host]
+    'port': 5984                    [port]
+    'protocol': 'https:',           [protocol]
+    'user': '',                     [username (basic auth)]
+    'password': ''                  [password (basic auth)]
 },
 'es': {
     'host': '127.0.0.1',            [Elasticsearch host]
