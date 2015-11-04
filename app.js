@@ -35,13 +35,13 @@ var options = {
 options.headers = {};
 options.headers['User-Agent'] = 'gitstats';
 
-var options_es = {
+/*var options_es = {
 	hostname: config.es.host,
 	path: '/',
 	port: config.es.port,
 	method: 'GET',
 	keepAlive: true
-}
+}*/
 
 
 
@@ -556,7 +556,6 @@ eventEmitter.once('couch_ready', load_orgs);
 var arg_deletedb  = process.argv.indexOf('--deletedb') != -1 ? true : false;
 var arg_help      = (process.argv.indexOf('-h') != -1) || (process.argv.indexOf('--help') != -1) ? true : false;
 var arg_collect   = (process.argv.indexOf('-c') != -1) || (process.argv.indexOf('--collect') != -1) ? true : false;
-var arg_es        = process.argv.indexOf('--es') != -1 ? true : false;
 
 if (arg_help || (process.argv.length===2)) print_help();
 
