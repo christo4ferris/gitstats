@@ -12,6 +12,7 @@
         "doc":{
           "properties":{
             "commits":{"type":"string"},
+            "count":{"type":"long"},
             "date":{
               "type":"date",
               "format":"dateOptionalTime"

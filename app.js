@@ -20,16 +20,20 @@ var optionsdb = {
 	path: '/' + config.db.name,
 	host: config.db.host,
 	port: config.db.port,
-    url: config.db.protocol + '//' + config.db.user + ':' + config.db.password + '@' + config.db.host,
-    headers: { 'Authorization': 'Basic ' + new Buffer(config.db.user + ':' + config.db.password).toString('base64')},
 	method: 'PUT',
 	keepAlive: true
 };
 
+if (config.db.user != '') {
+    optionsdb.url = config.db.protocol + '//' + config.db.user + ':' + config.db.password + '@' + config.db.host;
+    optionsdb.headers = { 'Authorization': 'Basic ' + new Buffer(config.db.user + ':' + config.db.password).toString('base64')}
+}
+
 var options = {
 	hostname: 'api.github.com',
 	port: 443,
-	method: 'GET'
+	method: 'GET',
+    keepAlive: true
 };
 
 options.headers = {};
@@ -133,62 +137,69 @@ function get_more(response, func) {
 }
 
 function get_stargazers(response) {
-    var opts = clone(optionsdb);
-	var body = '';
-	if (response.statusCode != 200) {
-		console.log('get_stargazers: ' + response.socket._httpMessage.path + ' moving on... status:' + response.statusCode);
-		//console.log('headers: ', response.headers);
-		return;
-	}
-	get_more(response, get_stargazers);
-	response.on('error', function(e) {
-		console.error(e);
-	});
-	response.on('data', function(d) {
-		body += d;
-	});
-	response.on('end', function() {
-		var parsed = JSON.parse(body);
-		var doc = {};
-		parsed.forEach(function (item) {
-			try {
-                // create a sha digest to be used as the docid
-                var shasum = crypto.createHash('sha1');
-                shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
-                var digest = shasum.digest('hex');
-				opts.path += '/' + digest;
-				var r = response.socket._httpMessage.path.split('/');
-				doc.type = 'event';
-                doc.event = 'stargazer';
-                doc.date = item.starred_at
-                doc.login = item.user.login;
-                doc.login_id = item.user.id;
-				var date = new Date(doc.date);
-				doc.week = date.getWeekNo();
+    try {
+        var body = '';
+        if (response.statusCode != 200) {
+            console.log('get_stargazers: ' + response.socket._httpMessage.path + ' moving on... status:' + response.statusCode);
+            //console.log('headers: ', response.headers);
+            return;
+        }
+        get_more(response, get_stargazers);
+        response.on('error', function(e) {
+            console.error(e);
+        });
+        response.on('data', function(d) {
+            body += d;
+        });
+        response.on('end', function() {
+            var parsed = JSON.parse(body);
+            var doc = {};
+            parsed.forEach(function (item) {
+                try {
+                    var opts = clone(optionsdb);
+                    // create a sha digest to be used as the docid
+                    var shasum = crypto.createHash('sha1');
+                    shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
+                    var digest = shasum.digest('hex');
+                    opts.path += '/' + digest;
+                    var r = response.socket._httpMessage.path.split('/');
+                    doc.type = 'event';
+                    doc.count = 1;
+                    doc.event = 'stargazer';
+                    doc.date = item.starred_at
+                    doc.login = item.user.login;
+                    doc.login_id = item.user.id;
+                    var date = new Date(doc.date);
+                    doc.week = date.getWeekNo();
 
-                // Get the repo full name, or the repo ID
-                // The response body for events does not contain the name or ID of the
-                // repository, and the nature of the throttling we are performing
-                // is such that we can't pass that information down the chain.
-                // If there are <100 results, than the response header will contains the
-                // repo name.  If there are >100 events, the paging mechanism will
-                // return a response header that contains the repo ID.  We capture
-                // whichever of those are available, and will perform post-processing
-                // elsewhere to ensure both fields are populated.
-                r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = r[2] + '/' + r[3];
+                    // Get the repo full name, or the repo ID
+                    // The response body for events does not contain the name or ID of the
+                    // repository, and the nature of the throttling we are performing
+                    // is such that we can't pass that information down the chain.
+                    // If there are <100 results, than the response header will contains the
+                    // repo name.  If there are >100 events, the paging mechanism will
+                    // return a response header that contains the repo ID.  We capture
+                    // whichever of those are available, and will perform post-processing
+                    // elsewhere to ensure both fields are populated.
+                    r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = r[2] + '/' + r[3];
 
-				var db = db_protocol.request(opts, handle_response);
-				db.write(JSON.stringify(doc));
-				db.end();
-				//console.log('GET_STARGAZERS: ', doc.date, doc.user, doc.user_id, opts.path);
-			}
-			catch (err) {
-                //console.log('GET_STARGAZERS: item: ',item);
-                console.log('GET_STARGAZERS: path: ',response.socket._httpMessage.path)
-				console.log(err);
-			}
-		});
-	});
+                    var db = db_protocol.request(opts, handle_response);
+                    db.write(JSON.stringify(doc));
+                    db.end();
+                    //console.log('GET_STARGAZERS: ', doc.date, doc.user, doc.user_id, opts.path);
+                }
+                catch (err) {
+                    //console.log('GET_STARGAZERS: item: ',item);
+                    console.log('GET_STARGAZERS: path: ',response.socket._httpMessage.path)
+                    console.error(err);
+                }
+            });
+        });
+    }
+    catch (err) {
+        console.log('GET_STARGAZERS: path: ',response.socket._httpMessage.path)
+		console.error(err);
+    }
 }
 
 function get_pull_requests(response) {
@@ -238,10 +249,11 @@ function get_pull_requests(response) {
 					db.write(JSON.stringify(doc));
 					db.end();
 				}
-				//console.log('adding pull for author: ',doc.sha,doc.name);
+				//console.log('--- GET_PULL_REQUESTS: ',doc.sha,doc.name);
 			}
 			catch (err) {
-				console.log(err);
+				console.log('--- GET_PULL_REQUESTS: path: ',response.socket._httpMessage.path)
+				console.error(err);
 			}
 		});
 	});
@@ -256,8 +268,9 @@ function get_commits(response) {
 			return;
 		}
 		get_more(response, get_commits);
-		response.on('error', function(e) {
-			console.error(e);
+		response.on('error', function(err) {
+            console.log('--- GET_COMMITS: path: ',response.socket._httpMessage.path)
+			console.error(err);
 		});
 		response.on('data', function(d) {
 			body += d;
@@ -298,7 +311,8 @@ function get_commits(response) {
                     //console.log('GET_COMMITS: ', doc.sha);
 				}
 				catch (err) {
-					console.log(err);
+					console.log('--- GET_COMMITS: path: ',response.socket._httpMessage.path)
+                    console.error(err);
 				}
 			});
 		});
@@ -361,6 +375,7 @@ function delete_db() {
 		else {
 			console.log('--- DELETE_DB: ', response.statusCode);
 			console.log('headers: ', response.headers);
+            //console.log(JSON.stringify(opts));
 		}
 		response.on('error', function(e) {
 			console.log('--- DELETE_DB: unknown error');
