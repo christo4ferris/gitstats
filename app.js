@@ -268,7 +268,7 @@ function get_commits(response) {
 			return;
 		}
 		get_more(response, get_commits);
-		response.on('error', function(e) {
+		response.on('error', function(err) {
             console.log('--- GET_COMMITS: path: ',response.socket._httpMessage.path)
 			console.error(err);
 		});
