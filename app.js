@@ -1,5 +1,4 @@
 /*eslint-env node */
-var events            = require('events');
 var crypto            = require('crypto');
 var has               = require('./src/has');
 var clone             = require('./src/clone');
@@ -13,9 +12,9 @@ var orgs              = require(config.orgsfile);
 
 
 var token             = '';
-var eventEmitter      = new events.EventEmitter();
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
 var exceptions        = [];
+var exception         = {};
 var timer             = null;
 var stack             = [];
 var processed_count   = 0;
@@ -423,7 +422,7 @@ function delete_db() {
 			console.error(e);
 		});
 
-        response.on('data', function(chunk){
+        response.on('data', function(){
           // we don't care about data here, but have to listen for it.
         });
 
@@ -474,24 +473,24 @@ function create_db() {
 			console.error(e);
 		});
 
-        response.on('data', function(chunk){
+        response.on('data', function(){
           // we don't care about data here, but have to listen for it.
         });
 
-        response.on('end', function(chunk){
+        response.on('end', function(){
             if (response.statusCode === 201) {
               init_db();
               console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
               load_orgs();
             }
-		    else if (response.statusCode === 412) {
-		        console.log('--- CREATE_DB: ' + config.db.name + ' already exists.');
+            else if (response.statusCode === 412) {
+                console.log('--- CREATE_DB: ' + config.db.name + ' already exists.');
 				load_orgs();
             }
             else {
                 console.log('--- CREATE_DB: ', response.statusCode);
                 console.log('headers: ', response.headers);
-		    }
+            }
         })
 	}).on('error', function(e){
 		console.log('CouchDB does not seem to be running!');
