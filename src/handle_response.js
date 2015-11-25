@@ -4,6 +4,11 @@ module.exports = function (response) {
 		console.log('--- HANDLE_RESPONSE: ')
 		console.error(e);
 	});
+
+    response.on('data', function() {
+        // we don't care about data here, but have to listen for it.
+    });
+
 	response.on('end', function() {
         switch(response.statusCode) {
             case 409:
@@ -16,7 +21,10 @@ module.exports = function (response) {
                 console.log('--- HANDLE_RESPONSE: ok - success.');
                 break;
             case 201:
-                console.log('--- HANDLE_RESPONSE: created - created/updated.');
+                //console.log('--- HANDLE_RESPONSE: created/updated.');
+                break;
+            default:
+                console.log('--- HANDLE_RESPONSE:', response.statusCode);
                 break;
         }
 	});
