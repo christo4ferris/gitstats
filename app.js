@@ -1,5 +1,4 @@
 /*eslint-env node */
-var events            = require('events');
 var crypto            = require('crypto');
 var has               = require('./src/has');
 var clone             = require('./src/clone');
@@ -11,17 +10,21 @@ var handle_response   = require('./src/handle_response');
 var config            = require('./config');
 var orgs              = require(config.orgsfile);
 
+
 var token             = '';
-var eventEmitter      = new events.EventEmitter();
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
+var exceptions        = [];
+var exception         = {};
+var timer             = null;
+var stack             = [];
+var processed_count   = 0;
 
 var optionsdb = {
     protocol: config.db.protocol,
 	path: '/' + config.db.name,
 	host: config.db.host,
 	port: config.db.port,
-	method: 'PUT',
-	keepAlive: true
+	method: 'PUT'
 };
 
 if (config.db.user != '') {
@@ -32,22 +35,11 @@ if (config.db.user != '') {
 var options = {
 	hostname: 'api.github.com',
 	port: 443,
-	method: 'GET',
-    keepAlive: true
+	method: 'GET'
 };
 
 options.headers = {};
 options.headers['User-Agent'] = 'gitstats';
-
-/*var options_es = {
-	hostname: config.es.host,
-	path: '/',
-	port: config.es.port,
-	method: 'GET',
-	keepAlive: true
-}*/
-
-
 
 //var port          = config.port || 3000;
 //var host          = config.host || 'localhost';
@@ -83,24 +75,31 @@ Date.prototype.getWeekNo = function(){
 	return Math.ceil((((d-new Date(d.getFullYear(),0,1))/8.64e7)+1)/7);
 };
 
-var timer = null;
-var stack = [];
 
 function process_queue() {
-    var item = stack.shift();
-    var r = item.opts.path.split('/');
-    console.log("PROCESS_QUEUE: ",item.func.name,Array(21-item.func.name.length).join(' '),r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3]);
-    var req = https.request(item.opts, item.func);
-    req.on('error', function(e) {
-        console.log('--- PROCESS_QUEUE: ', e.message);
-        console.error(e);
-    });
-    req.end();
+        var item = stack.shift();
+        exception = item;
+        var r = item.opts.path.split('/');
+        if (!item.hasOwnProperty('source')) item.source = 'other';
+        console.log("PROCESS_QUEUE: stack size/processed: ",
+                    stack.length + '/' + processed_count, item.func.name,
+                    Array(21-item.func.name.length).join(' '),item.source,
+                    Array(10-item.source.length).join(' '),
+                    r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3]);
+        var req = https.request(item.opts, item.func);
+
+        processed_count = processed_count + 1;
+        req.on('error', function(e) {
+            console.log('--- PROCESS_QUEUE: ', e.message);
+            console.error(e);
+        });
+
+        req.end();
   
-    if (stack.length === 0) {
-        clearInterval(timer);
-        timer = null;
-    }
+        if (stack.length === 0) {
+            clearInterval(timer);
+            timer = null;
+        }
 }
 
 function throttle(item) {
@@ -119,6 +118,7 @@ function get_more(response, func) {
 			t.func = func;
 			t.opts = clone(options);
 			t.opts.path = links['next'].substring(22, links['next'].length);
+            t.source = 'get_more';
 
             if (func.name === 'get_stargazers') {
                 // add media headers for GET_STARGAZERS
@@ -137,69 +137,64 @@ function get_more(response, func) {
 }
 
 function get_stargazers(response) {
-    try {
-        var body = '';
-        if (response.statusCode != 200) {
-            console.log('get_stargazers: ' + response.socket._httpMessage.path + ' moving on... status:' + response.statusCode);
-            //console.log('headers: ', response.headers);
-            return;
-        }
-        get_more(response, get_stargazers);
-        response.on('error', function(e) {
-            console.error(e);
-        });
-        response.on('data', function(d) {
-            body += d;
-        });
-        response.on('end', function() {
-            var parsed = JSON.parse(body);
-            var doc = {};
-            parsed.forEach(function (item) {
-                try {
-                    var opts = clone(optionsdb);
-                    // create a sha digest to be used as the docid
-                    var shasum = crypto.createHash('sha1');
-                    shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
-                    var digest = shasum.digest('hex');
-                    opts.path += '/' + digest;
-                    var r = response.socket._httpMessage.path.split('/');
-                    doc.type = 'event';
-                    doc.count = 1;
-                    doc.event = 'stargazer';
-                    doc.date = item.starred_at
-                    doc.login = item.user.login;
-                    doc.login_id = item.user.id;
-                    var date = new Date(doc.date);
-                    doc.week = date.getWeekNo();
-
-                    // Get the repo full name, or the repo ID
-                    // The response body for events does not contain the name or ID of the
-                    // repository, and the nature of the throttling we are performing
-                    // is such that we can't pass that information down the chain.
-                    // If there are <100 results, than the response header will contains the
-                    // repo name.  If there are >100 events, the paging mechanism will
-                    // return a response header that contains the repo ID.  We capture
-                    // whichever of those are available, and will perform post-processing
-                    // elsewhere to ensure both fields are populated.
-                    r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = r[2] + '/' + r[3];
-
-                    var db = db_protocol.request(opts, handle_response);
-                    db.write(JSON.stringify(doc));
-                    db.end();
-                    //console.log('GET_STARGAZERS: ', doc.date, doc.user, doc.user_id, opts.path);
-                }
-                catch (err) {
-                    //console.log('GET_STARGAZERS: item: ',item);
-                    console.log('GET_STARGAZERS: path: ',response.socket._httpMessage.path)
-                    console.error(err);
-                }
-            });
-        });
+    var body = '';
+    if (response.statusCode != 200) {
+        console.log('get_stargazers: ' + response.socket._httpMessage.path + ' moving on... status:' + response.statusCode);
+        //console.log('headers: ', response.headers);
+        return;
     }
-    catch (err) {
-        console.log('GET_STARGAZERS: path: ',response.socket._httpMessage.path)
-		console.error(err);
-    }
+    get_more(response, get_stargazers);
+    response.on('error', function(e) {
+        console.log('--- GET_STARGAZERS: error: ');
+        console.error(e);
+    });
+    response.on('data', function(d) {
+        body += d;
+    });
+    response.on('end', function() {
+        var parsed = JSON.parse(body);
+        var doc = {};
+        parsed.forEach(function (item) {
+            try {
+                var opts = clone(optionsdb);
+                // create a sha digest to be used as the docid
+                var shasum = crypto.createHash('sha1');
+                shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
+                var digest = shasum.digest('hex');
+                opts.path += '/' + digest;
+                var r = response.socket._httpMessage.path.split('/');
+                doc.type = 'event';
+                doc.count = 1;
+                doc.event = 'stargazer';
+                doc.date = item.starred_at
+                doc.login = item.user.login;
+                doc.login_id = item.user.id;
+                var date = new Date(doc.date);
+                doc.week = date.getWeekNo();
+
+                // Get the repo full name, or the repo ID
+                // The response body for events does not contain the name or ID of the
+                // repository, and the nature of the throttling we are performing
+                // is such that we can't pass that information down the chain.
+                // If there are <100 results, than the response header will contains the
+                // repo name.  If there are >100 events, the paging mechanism will
+                // return a response header that contains the repo ID.  We capture
+                // whichever of those are available, and will perform post-processing
+                // elsewhere to ensure both fields are populated.
+                r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = r[2] + '/' + r[3];
+
+                var db = db_protocol.request(opts, handle_response);
+                db.write(JSON.stringify(doc));
+                db.end();
+                //console.log('GET_STARGAZERS: ', doc.date, doc.user, doc.user_id, opts.path);
+            }
+            catch (err) {
+                //console.log('GET_STARGAZERS: item: ',item);
+                console.log('GET_STARGAZERS: path: ',response.socket._httpMessage.path)
+                console.error(err);
+            }
+        })
+    });
 }
 
 function get_pull_requests(response) {
@@ -239,6 +234,22 @@ function get_pull_requests(response) {
 				doc.url = item.url;
 				var db = db_protocol.request(opts, handle_response);
 				db.write(JSON.stringify(doc));
+
+                db.on('clientError', function(err,socket) {
+                    console.log('--- GET_PULL_REQUESTS: clientError: ', err.message);
+                    console.log(JSON.stringify(socket));
+                    console.error(err);
+                    process.exit(1);
+                });
+                db.on('connection', function(socket) {
+                  socket.on('error', function(err) {
+                      console.log('--- GET_PULL_REQUESTS: connection: ', err.message);
+                      console.log(JSON.stringify(socket));
+                      console.error(err);
+                      process.exit(1);
+                  });
+                })
+
 				db.end();
 				// account for pairing situations
 				// TODO - I think that we need to insert with a new id - hence opts.path needs to be different than above
@@ -275,6 +286,7 @@ function get_commits(response) {
 		response.on('data', function(d) {
 			body += d;
 		});
+
 		response.on('end', function() {
 			var parsed = JSON.parse(body);
 			var doc = {};
@@ -299,6 +311,22 @@ function get_commits(response) {
 					doc.url = item.url;
 					var db = db_protocol.request(opts, handle_response);
 					db.write(JSON.stringify(doc));
+
+                    db.on('clientError', function(err,socket) {
+                        console.log('--- GET_COMMITS: clientError: ', err.message);
+                        console.log(JSON.stringify(socket));
+                        console.error(err);
+                        process.exit(1);
+                    });
+                    db.on('connection', function(socket) {
+                      socket.on('error', function(err) {
+                          console.log('--- GET_COMMITS: connection: ', err.message);
+                          console.log(JSON.stringify(socket));
+                          console.error(err);
+                          process.exit(1);
+                      });
+                    })
+
 					db.end();
 					// account for pairing situations
 					if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
@@ -321,6 +349,7 @@ function get_commits(response) {
 
 function get_repos(response) {
 	var body = '';
+  console.log('--- GET REPOS: ');
 	if (response.statusCode != 200) { 
 		console.log('get_repos: ' + response.url + ' moving on... status:' + response.statusCode);
 		console.log('headers: ', response.headers);
@@ -338,24 +367,46 @@ function get_repos(response) {
 		parsed.forEach(function (item) {
 			console.log('--- GET REPOS: processing: ' + item.full_name);
 			var t = new Object();
+            var s = new Object();
+            var u = new Object();
 			var r = item.full_name.split('/');
 			t.opts = clone(options);
+            s.opts = clone(options);
+            u.opts = clone(options);
 
 			// get commits
-			t.func = get_commits;
-			t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100'  + token;
-			//T.throttle(t);
-            throttle(t);
-			//console.log('--- GET_REPOS: get_commits: ' + t.opts.path);
+            if (config.collect_commits) {
+                t.func = get_commits;
+                t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100'  + token;
+                //T.throttle(t);
+                throttle(t);
+                //console.log('--- GET_REPOS: get_commits: ' + t.opts.path);
+            }
 
 			// get pull requests
 			if (config.collect_pull_requests) {
-				t.func = get_pull_requests;
-				t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all'  + token;
-				//T.throttle(t);
-                throttle(t);
+                  s.func = get_pull_requests;
+                  s.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all'  + token;
+                  s.source = 'get_repos'
+                  //T.throttle(s);
+                  throttle(s);
+                  //console.log('--- GET REPOS: get_pull_requests: ' + s.opts.path);
 			}
-			//console.log('--- GET REPOS: get_pull_requests: ' + t.opts.path);
+
+            // get stargazers
+            if (config.collect_stargazers) {
+                u.func = get_stargazers;
+                u.opts.method = 'GET'
+                u.opts.path = '/repos/' + r[0] + '/' + r[1] + '/stargazers?per_page=100' + token;  // event api does not offer a "since" atttribute
+                u.opts.headers = {
+                    'Accept': 'application/vnd.github.v3.star+json',
+                    'User-Agent': 'gitstats',
+                    'Content-Type': 'application/json'
+                };  // see https://developer.github.com/v3/activity/starring
+                //T.throttle(u);
+                throttle(u);
+                //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);
+            }
 		});
 	});
 }
@@ -364,24 +415,32 @@ function delete_db() {
     var opts = clone(optionsdb);
 	opts.method = 'DELETE';
 	db_protocol.request(opts, function(response) {
-		if (response.statusCode == 200) {
-		console.log('--- DELETE_DB: ' + config.db.name + ' has been deleted.');
-		eventEmitter.emit('couch_db_deleted');
-		}
-		else if (response.statusCode == 404) {
-				console.log('--- DELETE_DB: ' + config.db.name + ' does not exist.');
-				eventEmitter.emit('couch_db_not_exist');
-		}
-		else {
-			console.log('--- DELETE_DB: ', response.statusCode);
-			console.log('headers: ', response.headers);
-            //console.log(JSON.stringify(opts));
-		}
+        console.log('--- DELETE_DB: connected:');
+
 		response.on('error', function(e) {
 			console.log('--- DELETE_DB: unknown error');
 			console.error(e);
 		});
-		return;
+
+        response.on('data', function(){
+          // we don't care about data here, but have to listen for it.
+        });
+
+        response.on('end', function(){
+            if (response.statusCode === 200) {
+                console.log('--- DELETE_DB: ' + config.db.name + ' has been deleted.');
+                create_db();
+            }
+            else if (response.statusCode === 404) {
+                console.log('--- DELETE_DB: ' + config.db.name + ' does not exist.');
+                create_db();
+            }
+            else {
+                console.log('--- DELETE_DB: ', response.statusCode);
+                console.log('headers: ', response.headers);
+                //console.log(JSON.stringify(opts));
+            }
+        })
 	}).on('error', function(e){
 		console.log('CouchDB does not seem to be running!');
 		console.error(e);
@@ -407,24 +466,32 @@ function create_db() {
     var opts = clone(optionsdb);
 	opts.method = 'PUT';
 	db_protocol.request(opts, function(response) {
-		if (response.statusCode == 201) {
-        init_db();
-		console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
-		eventEmitter.emit('couch_db_created');
-		}
-		else if (response.statusCode == 412) {
-				console.log('--- CREATE_DB: ' + config.db.name + ' already exists.');
-				eventEmitter.emit('couch_ready');
-		}
-		else {
-			console.log('--- CREATE_DB: ', response.statusCode);
-			console.log('headers: ', response.headers);
-		}
-		response.on('error', function(e) {
+        console.log('--- CREATE_DB: connected:');
+
+        response.on('error', function(e) {
 			console.log('--- CREATE_DB: unknown error');
 			console.error(e);
 		});
-		return;
+
+        response.on('data', function(){
+          // we don't care about data here, but have to listen for it.
+        });
+
+        response.on('end', function(){
+            if (response.statusCode === 201) {
+              init_db();
+              console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
+              load_orgs();
+            }
+            else if (response.statusCode === 412) {
+                console.log('--- CREATE_DB: ' + config.db.name + ' already exists.');
+				load_orgs();
+            }
+            else {
+                console.log('--- CREATE_DB: ', response.statusCode);
+                console.log('headers: ', response.headers);
+            }
+        })
 	}).on('error', function(e){
 		console.log('CouchDB does not seem to be running!');
 		console.error(e);
@@ -482,11 +549,12 @@ function load_orgs() {
             u.opts = clone(options);
 
 			// if this is an 'org' or 'user', put it in the queue to enumerate into a repo
-			if((item.type == 'org') || (item.type == 'user'))  {
+			if((item.type === 'org') || (item.type === 'user'))  {
 				t.func = get_repos;
 				var org = item.name;
 				t.opts = clone(options);
 				t.opts.path = '/' + item.type + 's/' + org + '/repos?per_page=100' + token;
+                t.source = 'load_orgs';
 				//T.throttle(t);
                 throttle(t);
 			}
@@ -501,31 +569,38 @@ function load_orgs() {
                         var since = '&since=' + result;
 
                         // get commits
-                        t.func = get_commits;
-                        t.opts.path = '/repos/' + repo + '/commits?per_page=100' + since + token;
-                        //T.throttle(t);
-                        throttle(t);
-                        //console.log('--- LOAD ORGS: get_commits: ' + t.opts.path);
+                        if (config.collect_commits) {
+                            t.func = get_commits;
+                            t.opts.path = '/repos/' + repo + '/commits?per_page=100' + since + token;
+                            //T.throttle(t);
+                            throttle(t);
+                            //console.log('--- LOAD ORGS: get_commits: ' + t.opts.path);
+                        }
 
                         // get pull requests
-                        s.func = get_pull_requests;
-                        s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + token;
-                        //T.throttle(s);
-                        throttle(s);
-                        //console.log('--- LOAD ORGS: get_pull_requests: ' + s.opts.path);
+                        if (config.collect_pull_requests) {
+                            s.func = get_pull_requests;
+                            s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + token;
+                            s.source = 'load_orgs'
+                            //T.throttle(s);
+                            throttle(s);
+                            //console.log('--- LOAD ORGS: get_pull_requests: ' + s.opts.path);
+                        }
 
                         // get stargazers
-                        u.func = get_stargazers;
-                        u.opts.method = 'GET'
-                        u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + token;  // event api does not offer a "since" atttribute
-                        u.opts.headers = {
-                            'Accept': 'application/vnd.github.v3.star+json',
-                            'User-Agent': 'gitstats',
-                            'Content-Type': 'application/json'
-                        };  // see https://developer.github.com/v3/activity/starring
-                        //T.throttle(u);
-                        throttle(u);
-                        //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);
+                        if (config.collect_stargazers) {
+                            u.func = get_stargazers;
+                            u.opts.method = 'GET'
+                            u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + token;  // event api does not offer a "since" atttribute
+                            u.opts.headers = {
+                                'Accept': 'application/vnd.github.v3.star+json',
+                                'User-Agent': 'gitstats',
+                                'Content-Type': 'application/json'
+                            };  // see https://developer.github.com/v3/activity/starring
+                            //T.throttle(u);
+                            throttle(u);
+                            //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);
+                        }
                     })
                     .catch(function (reason) {
                         throw new Error('LOAD_ORGS: error: ', reason.response.statusCode, reason.error.message);
@@ -536,23 +611,6 @@ function load_orgs() {
 	}
 }
 
-/*function sync_es(){
-    var opts = clone(options_es);
-    opts.path = '/_bulk';
-    opts.method = 'POST';
-    var action = { "index" : { "_index" : "cloudviz---agentless-system-crawler", "_type" : "commit", "_id" : "262900e8ca69293e5493553545cb51c87aedb1b9" } };
-    var source = { "doc":{"_rev": "1-4cb1e8f1be4a094aa28ec4960a679bef","org": "cloudviz","repo": "agentless-system-crawler","login": "cloudviz","name": "CLOUD VIZ","email": "cloudviz2015@gmail.com","date": "2015-07-20T18:34:40Z","url": "https://api.github.com/repos/cloudviz/agentless-system-crawler/commits/262900e8ca69293e5493553545cb51c87aedb1b9"}};
-    var action2 = { "index" : { "_index" : "cloudviz---agentless-system-crawler", "_type" : "commit", "_id" : "262900e8ca69293e5493553545cb51c87aedb110" } };
-    var source2 = { "doc":{"_rev": "1-4cb1e8f1be4a094aa28ec4960a679bef","org": "cloudviz","repo": "agentless-system-crawler","login": "cloudviz","name": "CLOUD VIZ","email": "cloudviz2015@gmail.com","date": "2015-07-20T18:34:40Z","url": "https://api.github.com/repos/cloudviz/agentless-system-crawler/commits/262900e8ca69293e5493553545cb51c87aedb1b9"}};
-    var action3 = { "index" : { "_index" : "node-red---node-red", "_type" : "commit", "_id" : "262900e8ca69293e5493553545cb51c87aedb111" } };
-    var source3 = { "doc":{"_rev": "1-4cb1e8f1be4a094aa28ec4960a679bef","org": "cloudviz","repo": "agentless-system-crawler","login": "cloudviz","name": "CLOUD VIZ","email": "cloudviz2015@gmail.com","date": "2015-07-20T18:34:40Z","url": "https://api.github.com/repos/cloudviz/agentless-system-crawler/commits/262900e8ca69293e5493553545cb51c87aedb1b9"}};
-
-    var db = http.request(opts, handle_response);
-    var body = JSON.stringify(action) + '\n' + JSON.stringify(source) + '\n' + JSON.stringify(action2) + '\n' + JSON.stringify(source2) + '\n' + JSON.stringify(action3) + '\n' + JSON.stringify(source3) + '\n';
-    console.log(body);
-    db.write(body);
-    db.end();
-}*/
 
 function print_help(){
     console.log('\nUsage: node app.js [option]\n');
@@ -562,11 +620,6 @@ function print_help(){
     console.log('\t-h, --help\tprint help (this message)\n');
 }
 
-eventEmitter.once('couch_db_exists', load_orgs);
-eventEmitter.once('couch_db_not_exist', create_db);
-eventEmitter.once('couch_db_created', load_orgs);
-eventEmitter.once('couch_db_deleted', create_db);
-eventEmitter.once('couch_ready', load_orgs);
 
 var arg_deletedb  = process.argv.indexOf('--deletedb') != -1 ? true : false;
 var arg_help      = (process.argv.indexOf('-h') != -1) || (process.argv.indexOf('--help') != -1) ? true : false;
@@ -582,6 +635,23 @@ if (!(arg_deletedb || arg_help || arg_collect)) {
     console.log('\n--- GITSTATS: No known argument provided - did you forget to use "-" or "--"?  Use -h for help!');
 }
 
+process.on('uncaughtException', function (er) {
+    if (typeof exception === 'undefined') exception = {};
+    if (exception.hasOwnProperty('opts')) exceptions.push(exception.opts.path + ':' + exception.source);
+    exception = {};
+    //stack.push(exception);
+    console.log('---UNCAUGHT EXCEPTION: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>');
+    console.error(er.stack);
+    console.log('---UNCAUGHT EXCEPTION: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<');
+    if (stack.length === 0) {
+        clearInterval(timer);
+        timer = null;
+    } else {
+      process_queue();
+    }
+});
+
+
 /*
 app.listen(port, host, initData);
 //delete_db();
@@ -590,9 +660,12 @@ console.log('App started on port ' + port);
 });
 
 
+*/
+
 // script for graceful shutdown
 process.on( 'SIGINT', function() {
-	console.log( '\nGracefully shutting down from SIGINT (Ctrl-C)' );
-	process.exit( );
+    console.log( '\nGracefully shutting down from SIGINT (Ctrl-C)' );
+    console.log('--- SYNC COMPLETE: ');
+    console.log(exceptions);
+    process.exit( );
 })
-*/

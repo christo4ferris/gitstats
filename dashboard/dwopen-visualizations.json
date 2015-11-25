@@ -1,5 +1,18 @@
 [
   {
+    "_id": "dwOpen-events",
+    "_type": "visualization",
+    "_source": {
+      "title": "dWOpen events",
+      "visState": "{\n  \"aggs\": [\n    {\n      \"id\": \"1\",\n      \"params\": {},\n      \"schema\": \"metric\",\n      \"type\": \"count\"\n    },\n    {\n      \"id\": \"2\",\n      \"params\": {\n        \"field\": \"doc.type\",\n        \"order\": \"desc\",\n        \"orderBy\": \"1\",\n        \"size\": 5\n      },\n      \"schema\": \"segment\",\n      \"type\": \"terms\"\n    },\n    {\n      \"id\": \"3\",\n      \"params\": {\n        \"field\": \"doc.repofullname\",\n        \"order\": \"asc\",\n        \"orderBy\": \"1\",\n        \"size\": 40\n      },\n      \"schema\": \"group\",\n      \"type\": \"terms\"\n    }\n  ],\n  \"listeners\": {},\n  \"params\": {\n    \"addLegend\": true,\n    \"addTimeMarker\": false,\n    \"addTooltip\": true,\n    \"defaultYExtents\": false,\n    \"mode\": \"stacked\",\n    \"scale\": \"linear\",\n    \"setYExtents\": false,\n    \"shareYAxis\": true,\n    \"times\": [],\n    \"yAxis\": {}\n  },\n  \"type\": \"histogram\"\n}",
+      "description": "",
+      "version": 1,
+      "kibanaSavedObjectMeta": {
+        "searchSourceJSON": "{\n  \"index\": \"dwopen\",\n  \"query\": {\n    \"query_string\": {\n      \"analyze_wildcard\": true,\n      \"query\": \"doc.type:(NOT 'lastpolled')\"\n    }\n  },\n  \"filter\": []\n}"
+      }
+    }
+  },
+  {
     "_id": "dWOpen-Monthly-Commits",
     "_type": "visualization",
     "_source": {
