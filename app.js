@@ -14,16 +14,21 @@ var orgs              = require(config.orgsfile);
 var token             = '';
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
 var exceptions        = [];
-var exception         = {};
 var timer             = null;
 var stack             = [];
 var processed_count   = 0;
 
+
+
 var optionsdb = {
-    protocol: config.db.protocol,
+    keepAlive: true,
+    maxSockets: Infinity,
+    maxFreeSockets: 256,
+    keepAliveMsecs: 1000,
 	path: '/' + config.db.name,
 	host: config.db.host,
 	port: config.db.port,
+    protocol: config.db.protocol,
 	method: 'PUT'
 };
 
@@ -32,14 +37,20 @@ if (config.db.user != '') {
     optionsdb.headers = { 'Authorization': 'Basic ' + new Buffer(config.db.user + ':' + config.db.password).toString('base64')}
 }
 
-var options = {
-	hostname: 'api.github.com',
-	port: 443,
+var optionsgit = {
+    keepAlive: true,
+    maxSockets: Infinity,
+    maxFreeSockets: 256,
+    keepAliveMsecs: 1000,
+	hostname: config.git.hostname,
+	port: config.git.port,
+    protocol: config.git.protocol,
 	method: 'GET'
 };
 
-options.headers = {};
-options.headers['User-Agent'] = 'gitstats';
+
+optionsgit.headers = {};
+optionsgit.headers['User-Agent'] = 'gitstats';
 
 //var port          = config.port || 3000;
 //var host          = config.host || 'localhost';
@@ -49,22 +60,22 @@ options.headers['User-Agent'] = 'gitstats';
 //require(path.join(__dirname, 'routes.js'))(app); // load our routes and pass in our app, config, and fully configured passport
 
 // set the token for GitHub queries
-if ((config.auth.token === '') && (config.auth.clientid === '') && (config.auth.secret === '') ) {
+if ((config.git.personaltoken === '') && (config.git.appid === '') && (config.git.appsecret === '') ) {
   console.log('---: GitHub credentials not provided.  You MUST provide a personal access token or a registered application id/secret.')
   process.exit();
 }
 
-if ((config.auth.token === '') && ((config.auth.clientid === '') || (config.auth.secret === '') )) {
+if ((config.git.personaltoken === '') && ((config.git.appid === '') || (config.git.appsecret === '') )) {
   console.log('---: Incomplete GitHub credentials not provided.  You MUST provide a personal access token or a registered application id/secret.')
   process.exit();
 }
 
-if ((config.auth.clientid != '') && (config.auth.secret != '')){
-  token = '&client_id=' + config.auth.clientid + '&client_secret=' + config.auth.secret;
+if ((config.git.appid != '') && (config.git.appsecret != '')){
+  token = '&client_id=' + config.git.appid + '&client_secret=' + config.git.appsecret;
   //console.log('---: Using REGISTERED APPLICATION credentials');
 }
 else {
-  token = '&access_token=' + config.auth.token;
+  token = '&access_token=' + config.git.personaltoken;
   //console.log('---: Using PERSONAL ACCESSS token');
 }
 
@@ -77,8 +88,8 @@ Date.prototype.getWeekNo = function(){
 
 
 function process_queue() {
-        var item = stack.shift();
-        exception = item;
+        var item          = stack.shift();
+        var req_protocol  = item.opts.protocol === 'https:' ? https : http;
         var r = item.opts.path.split('/');
         if (!item.hasOwnProperty('source')) item.source = 'other';
         console.log("PROCESS_QUEUE: stack size/processed: ",
@@ -86,7 +97,7 @@ function process_queue() {
                     Array(21-item.func.name.length).join(' '),item.source,
                     Array(10-item.source.length).join(' '),
                     r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3]);
-        var req = https.request(item.opts, item.func);
+        var req = req_protocol.request(item.opts, item.func);
 
         processed_count = processed_count + 1;
         req.on('error', function(e) {
@@ -116,7 +127,7 @@ function get_more(response, func) {
 		if (links['next'] != null) {
 			var t = new Object();
 			t.func = func;
-			t.opts = clone(options);
+			t.opts = clone(optionsgit);
 			t.opts.path = links['next'].substring(22, links['next'].length);
             t.source = 'get_more';
 
@@ -234,32 +245,18 @@ function get_pull_requests(response) {
 				doc.url = item.url;
 				var db = db_protocol.request(opts, handle_response);
 				db.write(JSON.stringify(doc));
-
-                db.on('clientError', function(err,socket) {
-                    console.log('--- GET_PULL_REQUESTS: clientError: ', err.message);
-                    console.log(JSON.stringify(socket));
-                    console.error(err);
-                    process.exit(1);
-                });
-                db.on('connection', function(socket) {
-                  socket.on('error', function(err) {
-                      console.log('--- GET_PULL_REQUESTS: connection: ', err.message);
-                      console.log(JSON.stringify(socket));
-                      console.error(err);
-                      process.exit(1);
-                  });
-                })
-
 				db.end();
-				// account for pairing situations
-				// TODO - I think that we need to insert with a new id - hence opts.path needs to be different than above
+
+				// account for pairing situations - opts.path needs to be different than above
 				if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
+                    opts.path += '-2';
 					doc.name = item.commit.author.name;
 					doc.email = item.commit.author.email;
-					db = db_protocol.request(opts, handle_response);
-					db.write(JSON.stringify(doc));
-					db.end();
+					db2 = db_protocol.request(opts, handle_response);
+					db2.write(JSON.stringify(doc));
+					db2.end();
 				}
+
 				//console.log('--- GET_PULL_REQUESTS: ',doc.sha,doc.name);
 			}
 			catch (err) {
@@ -311,30 +308,17 @@ function get_commits(response) {
 					doc.url = item.url;
 					var db = db_protocol.request(opts, handle_response);
 					db.write(JSON.stringify(doc));
+                    db.end();
 
-                    db.on('clientError', function(err,socket) {
-                        console.log('--- GET_COMMITS: clientError: ', err.message);
-                        console.log(JSON.stringify(socket));
-                        console.error(err);
-                        process.exit(1);
-                    });
-                    db.on('connection', function(socket) {
-                      socket.on('error', function(err) {
-                          console.log('--- GET_COMMITS: connection: ', err.message);
-                          console.log(JSON.stringify(socket));
-                          console.error(err);
-                          process.exit(1);
-                      });
-                    })
-
-					db.end();
-					// account for pairing situations
+					// account for pairing situations - opts.path needs to be different than above
 					if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
-						doc.name = item.commit.author.name;
+                    opts.path += '-2';
+
+                        doc.name = item.commit.author.name;
 						doc.email = item.commit.author.email;
-						db = db_protocol.request(opts, handle_response);
-						db.write(JSON.stringify(doc));
-						db.end();
+						db2 = db_protocol.request(opts, handle_response);
+						db2.write(JSON.stringify(doc));
+						db2.end();
 					}
                     //console.log('GET_COMMITS: ', doc.sha);
 				}
@@ -370,9 +354,9 @@ function get_repos(response) {
             var s = new Object();
             var u = new Object();
 			var r = item.full_name.split('/');
-			t.opts = clone(options);
-            s.opts = clone(options);
-            u.opts = clone(options);
+			t.opts = clone(optionsgit);
+            s.opts = clone(optionsgit);
+            u.opts = clone(optionsgit);
 
 			// get commits
             if (config.collect_commits) {
@@ -414,7 +398,7 @@ function get_repos(response) {
 function delete_db() {
     var opts = clone(optionsdb);
 	opts.method = 'DELETE';
-	db_protocol.request(opts, function(response) {
+	var req = db_protocol.request(opts, function(response) {
         console.log('--- DELETE_DB: connected:');
 
 		response.on('error', function(e) {
@@ -441,10 +425,14 @@ function delete_db() {
                 //console.log(JSON.stringify(opts));
             }
         })
-	}).on('error', function(e){
+	});
+
+    req.on('error', function(e){
 		console.log('CouchDB does not seem to be running!');
 		console.error(e);
-	}).end();
+	});
+
+    req.end();
 }
 
 function init_db() {
@@ -465,7 +453,7 @@ function init_db() {
 function create_db() {
     var opts = clone(optionsdb);
 	opts.method = 'PUT';
-	db_protocol.request(opts, function(response) {
+	var req = db_protocol.request(opts, function(response) {
         console.log('--- CREATE_DB: connected:');
 
         response.on('error', function(e) {
@@ -492,10 +480,14 @@ function create_db() {
                 console.log('headers: ', response.headers);
             }
         })
-	}).on('error', function(e){
+	});
+
+    req.on('error', function(e){
 		console.log('CouchDB does not seem to be running!');
 		console.error(e);
-	}).end();
+	});
+
+    req.end();
 }
 
 
@@ -507,7 +499,7 @@ function get_lastpolled(repo) {
         opts.path += '/' + repo.replace(/\//g, '---');
         var result = '1970-01-01T00:00:00Z'; // default to earliest UTC value
 
-        db_protocol.request(opts, function(res){
+        var req = db_protocol.request(opts, function(res){
             res.on('data', function(chunk) {
                 if ((res.statusCode === 200) || (res.statusCode === 304)) {
                     doc = JSON.parse(chunk);
@@ -533,7 +525,9 @@ function get_lastpolled(repo) {
             res.on('error', function(e) {
                 reject(e);
             });
-        }).end();
+        });
+
+        req.end();
     });
     return deferred; // <--- happens IMMEDIATELY (object that promise listens on)
 }
@@ -544,15 +538,15 @@ function load_orgs() {
 			var t = new Object();
 			var s = new Object();
             var u = new Object();
-			t.opts = clone(options);
-			s.opts = clone(options);
-            u.opts = clone(options);
+			t.opts = clone(optionsgit);
+			s.opts = clone(optionsgit);
+            u.opts = clone(optionsgit);
 
 			// if this is an 'org' or 'user', put it in the queue to enumerate into a repo
 			if((item.type === 'org') || (item.type === 'user'))  {
 				t.func = get_repos;
 				var org = item.name;
-				t.opts = clone(options);
+				t.opts = clone(optionsgit);
 				t.opts.path = '/' + item.type + 's/' + org + '/repos?per_page=100' + token;
                 t.source = 'load_orgs';
 				//T.throttle(t);

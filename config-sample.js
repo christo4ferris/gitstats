@@ -7,18 +7,17 @@ module.exports = {
     'interval': 720,
     'port': 80,
     'host': 'localhost',
-    'auth': {
-        'clientid': '',
-        'secret': '',
-        'token': ''
-    },
     'db': {
         'name': 'sample',
         'host': 'localhost',
         'port': 5984
     },
-    'es': {
-        'host': '127.0.0.1',
-        'port': 9200
+    'git': {
+        'hostname': 'api.github.com',
+        'port': 443,
+        'protocol': 'https:',
+        'appid': '',          // use appid & appsecret OR personaltoken
+        'appsecret': '',
+        'personaltoken': ''
     }
 };
