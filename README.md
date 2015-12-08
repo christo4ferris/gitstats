@@ -13,13 +13,14 @@ Options:
         -c, --collect   create a database (if necessary) and collect stats 
                           generated since the last run
         --deletedb      re-create the database and collect stats
-        --es            update ElasticSearch indexes
         -h, --help      print help (this message)
 ```
 # Environment Setup
 <strong>gitstats</strong> requires the middleware listed below:
 [NodeJS](https://nodejs.org/) v4.2.1+
-[ElasticSearch](https://www.elastic.co/products/elasticsearch) v2.0.0+
+[ElasticSearch](https://www.elastic.co/products/elasticsearch) v2.1+
+[LogStash](https://www.elastic.co/products/logstash) v2.1+
+[Kibana](https://www.elastic.co/products/kibana) v4.3.0+
 [npm](https://www.npmjs.com/) v2.14.7+
 # Configuration
 <strong>gitstats</strong> allows you to use a [personal access token](https://github.com/settings/tokens) 
@@ -33,7 +34,8 @@ Open `config.js` in a text editor and update as described below:
 'orgsfile': './orgs-sample.json',   [point at your org file, see 'Create an org file']
 'collect_commits': true,            [true or false]
 'collect_pull_requests': true,      [true or false]
-'interval': 720,                    [github processing interval in milliseconds
+'collect_stargazers': true,         [true or false]
+'interval': 1000,                   [github processing interval in milliseconds
                                      DO NOT set this value below 720]
 'port': 80,                         [gitstats application port]
 'host': 'localhost',                [gitstats application host]
@@ -50,10 +52,16 @@ Open `config.js` in a text editor and update as described below:
     'user': '',                     [username (basic auth)]
     'password': ''                  [password (basic auth)]
 },
-'es': {
-    'host': '127.0.0.1',            [Elasticsearch host]
-    'port': 9200                    [Elasticsearch port]
+'git': {
+    'hostname': 'api.github.com',
+    'port': 443,
+    'protocol': 'https:',
+    'appid': '',                    [client id, GitHub registered application
+                                     use appid & appsecret OR personaltoken, not both
+    'appsecret': '',                [client secret, GitHub registered application]
+    'personaltoken': ''             [GitHub personal access token]
 }
+
 ```
 ## Create an org file
 Make a copy of `orgs-sample.json`.  Name it whatever you like, but be sure to

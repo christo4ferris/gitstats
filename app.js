@@ -13,7 +13,6 @@ var orgs              = require(config.orgsfile);
 
 var token             = '';
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
-var exceptions        = [];
 var timer             = null;
 var stack             = [];
 var processed_count   = 0;
@@ -24,7 +23,7 @@ var optionsdb = {
     keepAlive: true,
     maxSockets: Infinity,
     maxFreeSockets: 256,
-    keepAliveMsecs: 1000,
+    keepAliveMsecs: 10000,
 	path: '/' + config.db.name,
 	host: config.db.host,
 	port: config.db.port,
@@ -92,8 +91,8 @@ function process_queue() {
         var req_protocol  = item.opts.protocol === 'https:' ? https : http;
         var r = item.opts.path.split('/');
         if (!item.hasOwnProperty('source')) item.source = 'other';
-        console.log("PROCESS_QUEUE: stack size/processed: ",
-                    stack.length + '/' + processed_count, item.func.name,
+        console.log('PROCESS_QUEUE: START: item/stack size/processed: ',
+                    item.counter + '/' + stack.length + '/' + processed_count, item.func.name,
                     Array(21-item.func.name.length).join(' '),item.source,
                     Array(10-item.source.length).join(' '),
                     r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3]);
@@ -105,7 +104,14 @@ function process_queue() {
             console.error(e);
         });
 
-        req.end();
+        req.end(function(){
+          var index = openqueue.indexOf(item.counter);
+          if( index > -1) {
+              openqueue.splice(index,1);
+              donequeue.splice(index,1);
+          }
+          console.log('PROCESS_QUEUE: END: ', item.counter, 'open requests: ',openqueue.toString());
+        });
   
         if (stack.length === 0) {
             clearInterval(timer);
@@ -113,8 +119,16 @@ function process_queue() {
         }
 }
 
+var counter = 0;
+var openqueue = [];
+var donequeue = [];
+
 function throttle(item) {
+    counter++;
+    item.counter = counter;
     stack.push(item);
+    openqueue.push(counter);
+    donequeue.push(item);
     if (timer === null) {
       timer = setInterval(process_queue, config.interval);
     }
@@ -141,8 +155,7 @@ function get_more(response, func) {
             }
 			//T.throttle(t);
             throttle(t);
-            var r = t.opts.path.split('/');
-			console.log('GET_MORE     : ',func.name,Array(21-func.name.length).join(' '), 'repo ID: ' + r[2]);
+			console.log('GET_MORE     : ',func.name,Array(21-func.name.length).join(' '), t.opts.path);
 		}
 	}
 }
@@ -252,7 +265,7 @@ function get_pull_requests(response) {
                     opts.path += '-2';
 					doc.name = item.commit.author.name;
 					doc.email = item.commit.author.email;
-					db2 = db_protocol.request(opts, handle_response);
+					var db2 = db_protocol.request(opts, handle_response);
 					db2.write(JSON.stringify(doc));
 					db2.end();
 				}
@@ -316,7 +329,7 @@ function get_commits(response) {
 
                         doc.name = item.commit.author.name;
 						doc.email = item.commit.author.email;
-						db2 = db_protocol.request(opts, handle_response);
+						var db2 = db_protocol.request(opts, handle_response);
 						db2.write(JSON.stringify(doc));
 						db2.end();
 					}
@@ -629,15 +642,17 @@ if (!(arg_deletedb || arg_help || arg_collect)) {
     console.log('\n--- GITSTATS: No known argument provided - did you forget to use "-" or "--"?  Use -h for help!');
 }
 
+
 process.on('uncaughtException', function (er) {
-    if (typeof exception === 'undefined') exception = {};
-    if (exception.hasOwnProperty('opts')) exceptions.push(exception.opts.path + ':' + exception.source);
-    exception = {};
-    //stack.push(exception);
     console.log('---UNCAUGHT EXCEPTION: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>');
+    console.log('open requests: ' + openqueue.toString());
     console.error(er.stack);
     console.log('---UNCAUGHT EXCEPTION: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<');
-    if (stack.length === 0) {
+    if ((stack.length === 0) && (donequeue.length > 0)) {
+      stack = donequeue;
+      donequeue = []
+      process_queue();
+    } else if (stack.length === 0) {
         clearInterval(timer);
         timer = null;
     } else {
@@ -660,6 +675,7 @@ console.log('App started on port ' + port);
 process.on( 'SIGINT', function() {
     console.log( '\nGracefully shutting down from SIGINT (Ctrl-C)' );
     console.log('--- SYNC COMPLETE: ');
-    console.log(exceptions);
-    process.exit( );
+    clearInterval(timer);
+    timer = null;
+    process.exit();
 })
