@@ -12,7 +12,7 @@ module.exports = function (response) {
 	response.on('end', function() {
         switch(response.statusCode) {
             case 409:
-                console.log('--- HANDLE_RESPONSE: conflict - document already exists.');
+                //console.log('--- HANDLE_RESPONSE: conflict - document already exists.');
                 break;
             case 412:
                 console.log('--- HANDLE_RESPONSE: precondition failed - headers do not match.');
