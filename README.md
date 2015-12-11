@@ -69,18 +69,23 @@ long as you specify the correct `type`, as demonstrated below:
 ]
 ```
 
-<strong>gitstats</strong> requires the middleware listed below:
-[NodeJS](https://nodejs.org/) v4.2.1+
-[ElasticSearch](https://www.elastic.co/products/elasticsearch) v2.1+
-[LogStash](https://www.elastic.co/products/logstash) v2.1+
-[Kibana](https://www.elastic.co/products/kibana) v4.3.0+
-[npm](https://www.npmjs.com/) v2.14.7+
+## Run the gitstats collector
+Run the collector with the `--deletedb` flag the first time.  You may run it with the `-c` flag thereafter.
+
+## Set up the middleware
+<strong>gitstats</strong> requires the following middleware:
+<ul>
+<li>[NodeJS](https://nodejs.org/) v4.2.1+</li>
+<li>[ElasticSearch](https://www.elastic.co/products/elasticsearch) v2.1+</li>
+<li>[LogStash](https://www.elastic.co/products/logstash) v2.1+</li>
+<li>[Kibana](https://www.elastic.co/products/kibana) v4.3.0+</li>
+</ul>
 
 The instructions below assume you run all components locally; however, you may mix and match.  For example, you could run Node, CouchDb, Logstash, and Kibana locally, and point at an ElasticSearch instance in the cloud.
 
-Install and run [CouchDB]()
+#### 1. Install and run [CouchDB]()
 
-Install and run [Elasticsearch]()
+#### 2. Install and run [Elasticsearch]()
 
 Create the ElasticSearch index using the following command:
 `curl -XPUT http://[Elasticsearch IP]:[port]/sample -d '[paste the contents of dwopen-logstash-index.json]'`
@@ -93,16 +98,18 @@ NOTE 2: `sample` is the name of the created index and should also be used in `lo
 After running the command, you should get a response like this:
 `{"acknowledged":true}`
 
-Install [Logstash]()
+#### 3. Install [Logstash]()
 Create a logstash.conf file from the template provided (logstash-sample.conf)
 
-Install [Kibana]()
+#### 4. Install [Kibana]()
 Be sure to update `\config\kibana.yml` to point it at your ElasticSearch instance
 
-Run the gitstats collector with --deletedb to reload the data and have logstash pick up the events
-
-From Kibana, open Settings and then Indices
+Open Kibana in a browser, then open Settings and then Indices
 
 Click on "Add Index" and enter 'dwopen' - the "Create" button should light up. When it asks for the date field to index on, choose 'doc.date'
 
-Open Settings and then Objects and then import dwopen-visualizations.json and then dwopen-dashboard.json
+Open Settings and then Objects and then import `dwopen-visualizations.json` and then `dwopen-dashboard.json`
+
+Open Dashboard, and load "dWO Dashboard"
+
+If you don't see any data, change the timeframe by clicking the timer in the upper right corner of the dashboard.

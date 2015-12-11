@@ -70,20 +70,6 @@
     }
   },
   {
-    "_id": "Projects",
-    "_type": "visualization",
-    "_source": {
-      "title": "Projects",
-      "visState": "{\"type\":\"metric\",\"params\":{\"fontSize\":60},\"aggs\":[{\"id\":\"1\",\"type\":\"cardinality\",\"schema\":\"metric\",\"params\":{\"field\":\"doc.repofullname\"}}],\"listeners\":{}}",
-      "uiStateJSON": "{}",
-      "description": "",
-      "version": 1,
-      "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"*\",\"analyze_wildcard\":true}},\"filter\":[]}"
-      }
-    }
-  },
-  {
     "_id": "Stargazers",
     "_type": "visualization",
     "_source": {
@@ -122,6 +108,20 @@
       "version": 1,
       "kibanaSavedObjectMeta": {
         "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.type:pull_request\",\"analyze_wildcard\":true}},\"filter\":[]}"
+      }
+    }
+  },
+  {
+    "_id": "Projects",
+    "_type": "visualization",
+    "_source": {
+      "title": "Projects",
+      "visState": "{\"type\":\"metric\",\"params\":{\"fontSize\":60},\"aggs\":[{\"id\":\"1\",\"type\":\"cardinality\",\"schema\":\"metric\",\"params\":{\"field\":\"doc.repofullname\"}}],\"listeners\":{}}",
+      "uiStateJSON": "{}",
+      "description": "",
+      "version": 1,
+      "kibanaSavedObjectMeta": {
+        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   }
