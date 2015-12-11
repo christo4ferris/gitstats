@@ -15,13 +15,6 @@ Options:
         --deletedb      re-create the database and collect stats
         -h, --help      print help (this message)
 ```
-# Environment Setup
-<strong>gitstats</strong> requires the middleware listed below:
-[NodeJS](https://nodejs.org/) v4.2.1+
-[ElasticSearch](https://www.elastic.co/products/elasticsearch) v2.1+
-[LogStash](https://www.elastic.co/products/logstash) v2.1+
-[Kibana](https://www.elastic.co/products/kibana) v4.3.0+
-[npm](https://www.npmjs.com/) v2.14.7+
 # Configuration
 <strong>gitstats</strong> allows you to use a [personal access token](https://github.com/settings/tokens) 
 or a [registered application id/secret](https://github.com/settings/developers).  You only need to provide one
@@ -39,13 +32,9 @@ Open `config.js` in a text editor and update as described below:
                                      DO NOT set this value below 720]
 'port': 80,                         [gitstats application port]
 'host': 'localhost',                [gitstats application host]
-'auth': {
-    'clientid': '',                 [client id, GitHub registered application]
-    'secret': '',                   [client secret, GitHub registered application]
-    'token': ''                     [GitHub personal access token]
-},
 'db': {                             [this section is for NoSQL db]
-    'name': 'sample',               [db name]
+    'name': 'sample',               [db name - NOTE: this will also be the name of your
+                                     ElasticSearch index and logstash.conf]
     'host': 'localhost',            [host]
     'port': 5984                    [port]
     'protocol': 'https:',           [protocol]
@@ -57,7 +46,7 @@ Open `config.js` in a text editor and update as described below:
     'port': 443,
     'protocol': 'https:',
     'appid': '',                    [client id, GitHub registered application
-                                     use appid & appsecret OR personaltoken, not both
+                                     use appid & appsecret OR personaltoken, not both]
     'appsecret': '',                [client secret, GitHub registered application]
     'personaltoken': ''             [GitHub personal access token]
 }
@@ -79,3 +68,41 @@ long as you specify the correct `type`, as demonstrated below:
     {"name":"cognitive-catalyst/cognitive-catalyst", "type":"repo"},
 ]
 ```
+
+<strong>gitstats</strong> requires the middleware listed below:
+[NodeJS](https://nodejs.org/) v4.2.1+
+[ElasticSearch](https://www.elastic.co/products/elasticsearch) v2.1+
+[LogStash](https://www.elastic.co/products/logstash) v2.1+
+[Kibana](https://www.elastic.co/products/kibana) v4.3.0+
+[npm](https://www.npmjs.com/) v2.14.7+
+
+The instructions below assume you run all components locally; however, you may mix and match.  For example, you could run Node, CouchDb, Logstash, and Kibana locally, and point at an ElasticSearch instance in the cloud.
+
+Install and run [CouchDB]()
+
+Install and run [Elasticsearch]()
+
+Create the ElasticSearch index using the following command:
+`curl -XPUT http://[Elasticsearch IP]:[port]/sample -d '[paste the contents of dwopen-logstash-index.json]'`
+
+If your instance of ElasticSearch requires basic auth, use this:
+`curl -u username -XPUT http://[Elasticsearch IP]:[port]/sample -d '[paste the contents of dwopen-logstash-index.json]'`
+Replace `username` with - you guessed it - your ElasticSearch username.  You will be prompted for the password.
+NOTE 1: the json file contains line breaks for readability; you will need to remove the linebreaks manually, or with a free online tool such as [Text Fixer](http://www.textfixer.com/tools/remove-line-breaks.php)
+NOTE 2: `sample` is the name of the created index and should also be used in `logstash.conf` - refer to the `db:name` parameter in the Configuration section below.
+After running the command, you should get a response like this:
+`{"acknowledged":true}`
+
+Install [Logstash]()
+Create a logstash.conf file from the template provided (logstash-sample.conf)
+
+Install [Kibana]()
+Be sure to update `\config\kibana.yml` to point it at your ElasticSearch instance
+
+Run the gitstats collector with --deletedb to reload the data and have logstash pick up the events
+
+From Kibana, open Settings and then Indices
+
+Click on "Add Index" and enter 'dwopen' - the "Create" button should light up. When it asks for the date field to index on, choose 'doc.date'
+
+Open Settings and then Objects and then import dwopen-visualizations.json and then dwopen-dashboard.json
