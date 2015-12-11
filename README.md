@@ -79,7 +79,6 @@ Run the collector with the `--deletedb` flag the first time.  You may run it wit
 <li>[ElasticSearch](https://www.elastic.co/products/elasticsearch) v2.1+</li>
 <li>[LogStash](https://www.elastic.co/products/logstash) v2.1+</li>
 <li>[Kibana](https://www.elastic.co/products/kibana) v4.3.0+</li>
-<li>[npm](https://www.npmjs.com/) v2.14.7+</li>
 </ul>
 
 The instructions below assume you run all components locally; however, you may mix and match.  For example, you could run Node, CouchDb, Logstash, and Kibana locally, and point at an ElasticSearch instance in the cloud.
