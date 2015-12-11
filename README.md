@@ -73,12 +73,14 @@ long as you specify the correct `type`, as demonstrated below:
 Run the collector with the `--deletedb` flag the first time.  You may run it with the `-c` flag thereafter.
 
 ## Set up the middleware
-<strong>gitstats</strong> requires the middleware listed below:
-[NodeJS](https://nodejs.org/) v4.2.1+
-[ElasticSearch](https://www.elastic.co/products/elasticsearch) v2.1+
-[LogStash](https://www.elastic.co/products/logstash) v2.1+
-[Kibana](https://www.elastic.co/products/kibana) v4.3.0+
-[npm](https://www.npmjs.com/) v2.14.7+
+<strong>gitstats</strong> requires the following middleware:
+<ul>
+<li>[NodeJS](https://nodejs.org/) v4.2.1+</li>
+<li>[ElasticSearch](https://www.elastic.co/products/elasticsearch) v2.1+</li>
+<li>[LogStash](https://www.elastic.co/products/logstash) v2.1+</li>
+<li>[Kibana](https://www.elastic.co/products/kibana) v4.3.0+</li>
+<li>[npm](https://www.npmjs.com/) v2.14.7+</li>
+</ul>
 
 The instructions below assume you run all components locally; however, you may mix and match.  For example, you could run Node, CouchDb, Logstash, and Kibana locally, and point at an ElasticSearch instance in the cloud.
 
