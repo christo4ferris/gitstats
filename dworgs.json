@@ -22,6 +22,7 @@
     {"name": "IBM-MIL/IBM-Ready-App-for-Loyalty", "type": "repo"},
     {"name": "IBM-MIL/IBM-Ready-App-for-Telecommunications", "type": "repo"},
 	{"name": "IBM-MIL/IBM-Ready-App-for-Venue", "type": "repo"},
+    {"name": "IBM-MIL/IBM-Ready-App-for-Travel", "type": "repo"},
     {"name": "ibm-security-innovation/libsecurity-go", "type": "repo"},
     {"name": "shmul/mule", "type": "repo"},
     {"name": "ibm-bluemix-mobile-services/bms-clientsdk-android-core", "type": "repo"},
