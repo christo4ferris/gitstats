@@ -10,13 +10,18 @@ var handle_response   = require('./src/handle_response');
 var config            = require('./config');
 var orgs              = require(config.orgsfile);
 
-
 var token             = '';
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
 var timer             = null;
 var stack             = [];
 var processed_count   = 0;
 
+// initialize IBM BlueMix
+//var bluemix           = require('ibmbluemix');
+//bluemix.initialize(config.bluemix);
+//var logger            = bluemix.getLogger();
+var port              = (process.env.VCAP_APP_PORT || 3000);
+var host              = (process.env.VCAP_APP_HOST || 'localhost');
 
 
 var optionsdb = {
@@ -110,12 +115,13 @@ function process_queue() {
               openqueue.splice(index,1);
               donequeue.splice(index,1);
           }
-          console.log('PROCESS_QUEUE: END: ', item.counter, 'open requests: ',openqueue.toString());
+          console.log('PROCESS_QUEUE: END: ', item.counter, '# of open requests: ',openqueue.toString());
         });
   
         if (stack.length === 0) {
             clearInterval(timer);
             timer = null;
+            console.log('PROCESS_QUEUE: queue is empty');
         }
 }
 
@@ -205,7 +211,7 @@ function get_stargazers(response) {
                 // return a response header that contains the repo ID.  We capture
                 // whichever of those are available, and will perform post-processing
                 // elsewhere to ensure both fields are populated.
-                r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = r[2] + '/' + r[3];
+                r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = (r[2] + '/' + r[3]).toLowerCase();
 
                 var db = db_protocol.request(opts, handle_response);
                 db.write(JSON.stringify(doc));
@@ -246,7 +252,7 @@ function get_pull_requests(response) {
 				doc.type = 'pull_request';
 				doc.org = r[4];
 				doc.repo = r[5];
-				doc.repofullname = r[4] + '/' + r[5];
+				doc.repofullname = (r[4] + '/' + r[5]).toLowerCase();
 				doc.sha = item.head.sha;
 				doc.number = item.number;
 				doc.state = item.state;
@@ -308,7 +314,7 @@ function get_commits(response) {
 					doc.type = 'commit';
 					doc.org = r[4];
 					doc.repo = r[5];
-					doc.repofullname = r[4] + '/' + r[5];
+					doc.repofullname = (r[4] + '/' + r[5]).toLowerCase();
 					doc.sha = item.sha;
 					doc.login = 'unknown';
 					if (item.committer != null) doc.login = item.committer.login;
@@ -384,7 +390,7 @@ function get_repos(response) {
 			if (config.collect_pull_requests) {
                   s.func = get_pull_requests;
                   s.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all'  + token;
-                  s.source = 'get_repos'
+                  s.source = 'get_repos';
                   //T.throttle(s);
                   throttle(s);
                   //console.log('--- GET REPOS: get_pull_requests: ' + s.opts.path);
@@ -393,7 +399,7 @@ function get_repos(response) {
             // get stargazers
             if (config.collect_stargazers) {
                 u.func = get_stargazers;
-                u.opts.method = 'GET'
+                u.opts.method = 'GET';
                 u.opts.path = '/repos/' + r[0] + '/' + r[1] + '/stargazers?per_page=100' + token;  // event api does not offer a "since" atttribute
                 u.opts.headers = {
                     'Accept': 'application/vnd.github.v3.star+json',
@@ -464,60 +470,75 @@ function init_db() {
 }
 
 function create_db() {
-    var opts = clone(optionsdb);
-	opts.method = 'PUT';
-	var req = db_protocol.request(opts, function(response) {
-        console.log('--- CREATE_DB: connected:');
+    if (stack.length === 0)
+    {
+        var opts = clone(optionsdb);
+        opts.method = 'PUT';
+        var req = db_protocol.request(opts, function(response) {
+            console.log('--- CREATE_DB: connected:');
 
-        response.on('error', function(e) {
-			console.log('--- CREATE_DB: unknown error');
-			console.error(e);
-		});
+            response.on('error', function(e) {
+                console.log('--- CREATE_DB: unknown error');
+                console.error(e);
+            });
 
-        response.on('data', function(){
-          // we don't care about data here, but have to listen for it.
+            response.on('data', function(){
+              // we don't care about data here, but have to listen for it.
+            });
+
+            response.on('end', function(){
+                if (response.statusCode === 201) {
+                  init_db();
+                  console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
+                  load_orgs();
+                }
+                else if (response.statusCode === 412) {
+                    console.log('--- CREATE_DB: ' + config.db.name + ' already exists.');
+                    load_orgs();
+                }
+                else {
+                    console.log('--- CREATE_DB: ', response.statusCode);
+                    console.log('headers: ', response.headers);
+                }
+            })
         });
 
-        response.on('end', function(){
-            if (response.statusCode === 201) {
-              init_db();
-              console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
-              load_orgs();
-            }
-            else if (response.statusCode === 412) {
-                console.log('--- CREATE_DB: ' + config.db.name + ' already exists.');
-				load_orgs();
-            }
-            else {
-                console.log('--- CREATE_DB: ', response.statusCode);
-                console.log('headers: ', response.headers);
-            }
-        })
-	});
+        req.on('error', function(e){
+            console.log('CouchDB does not seem to be running!');
+            console.error(e);
+        });
 
-    req.on('error', function(e){
-		console.log('CouchDB does not seem to be running!');
-		console.error(e);
-	});
-
-    req.end();
+        req.end();
+    }
 }
 
 
+/*
+    This function improves the efficiency of GitHub synchronization.
+
+    It queries the database for a "lastpolled" document for each
+    repository in the watchlist.  If none exists, gitstats will pull stats
+    for the repo since "the beginning of time"; otherwise, it will only
+    pull stats beginning at the date indicated in the lastpolled document.
+    In either case, a lastpolled document will be created/updated with a
+    current datetime stamp.
+*/
 function get_lastpolled(repo) {
     var deferred = new Promise(function(resolve, reject) {
         var doc = {};
         var opts = clone(optionsdb);
         opts.method = 'GET';
         opts.path += '/' + repo.replace(/\//g, '---');
-        var result = '1970-01-01T00:00:00Z'; // default to earliest UTC value
+        var result = {};
+        result.date = '1970-01-01T00:00:00Z'; // default to earliest UTC value
 
         var req = db_protocol.request(opts, function(res){
             res.on('data', function(chunk) {
                 if ((res.statusCode === 200) || (res.statusCode === 304)) {
                     doc = JSON.parse(chunk);
                     //console.log('--- GET_LASTPOLLED: old date: ',doc.repofullname, doc.date);
-                    result = doc.date;
+                    result.date = doc.date;
+                    result.create_webhook = false;
 
                 } else {
                     // create the lastpolled document
@@ -527,10 +548,10 @@ function get_lastpolled(repo) {
                 }
 
                 // update / create lastpolled doc
-                opts.method = 'PUT'
+                opts.method = 'PUT';
                 doc.date = new Date().toISOString();
                 var db = db_protocol.request(opts, handle_response);
-                db.write(JSON.stringify(doc))
+                db.write(JSON.stringify(doc));
                 db.end();
                 console.log('--- GET_LASTPOLLED: new date: ',doc.repofullname, doc.date);
                 resolve(result);
@@ -573,7 +594,7 @@ function load_orgs() {
 				// create or update the 'last polled' pointer for each repo
                 Promise.resolve(get_lastpolled(repo)
                     .then (function (result) {
-                        var since = '&since=' + result;
+                        var since = '&since=' + result.date;
 
                         // get commits
                         if (config.collect_commits) {
@@ -588,7 +609,7 @@ function load_orgs() {
                         if (config.collect_pull_requests) {
                             s.func = get_pull_requests;
                             s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + token;
-                            s.source = 'load_orgs'
+                            s.source = 'load_orgs';
                             //T.throttle(s);
                             throttle(s);
                             //console.log('--- LOAD ORGS: get_pull_requests: ' + s.opts.path);
@@ -597,7 +618,7 @@ function load_orgs() {
                         // get stargazers
                         if (config.collect_stargazers) {
                             u.func = get_stargazers;
-                            u.opts.method = 'GET'
+                            u.opts.method = 'GET';
                             u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + token;  // event api does not offer a "since" atttribute
                             u.opts.headers = {
                                 'Accept': 'application/vnd.github.v3.star+json',
@@ -661,20 +682,37 @@ process.on('uncaughtException', function (er) {
 });
 
 
+// set timer for hourly refresh
+/*
+setInterval(function () {
+  create_db();
+  console.log('---: Refreshed data at: ' + Date.now());
+}, 3600000);
+*/
+
+
+function handleRequest(request, response){
+    response.end('--- HANDLEREQUEST: ' + request.url);
+}
+
+var server = http.createServer(handleRequest);
+
+server.listen(port, host, function(){
+    initServer();
+    console.log('Server listening on:', host, port);
+});
+
 /*
 app.listen(port, host, initData);
 //delete_db();
 //create_db();
 console.log('App started on port ' + port);
 });
-
-
 */
 
 // script for graceful shutdown
 process.on( 'SIGINT', function() {
     console.log( '\nGracefully shutting down from SIGINT (Ctrl-C)' );
-    console.log('--- SYNC COMPLETE: ');
     clearInterval(timer);
     timer = null;
     process.exit();
