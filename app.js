@@ -649,20 +649,23 @@ function print_help(){
 }
 
 
-var arg_deletedb  = process.argv.indexOf('--deletedb') != -1 ? true : false;
-var arg_help      = (process.argv.indexOf('-h') != -1) || (process.argv.indexOf('--help') != -1) ? true : false;
-var arg_collect   = (process.argv.indexOf('-c') != -1) || (process.argv.indexOf('--collect') != -1) ? true : false;
+function initServer() {
+    console.log('Initializing gitstats microservice...')
+    var arg_deletedb  = process.argv.indexOf('--deletedb') != -1 ? true : false;
+    var arg_help      = (process.argv.indexOf('-h') != -1) || (process.argv.indexOf('--help') != -1) ? true : false;
+    var arg_collect   = (process.argv.indexOf('-c') != -1) || (process.argv.indexOf('--collect') != -1) ? true : false;
 
-if (arg_help || (process.argv.length===2)) print_help();
+    if (arg_help || (process.argv.length===2)) print_help();
 
-if (arg_deletedb) delete_db();
+    if (arg_deletedb) delete_db();
 
-if (arg_collect) create_db();
+    if (arg_collect) create_db();
 
-if (!(arg_deletedb || arg_help || arg_collect)) {
-    console.log('\n--- GITSTATS: No known argument provided - did you forget to use "-" or "--"?  Use -h for help!');
+    if (!(arg_deletedb || arg_help || arg_collect)) {
+        console.log('\n--- GITSTATS: No known argument provided - did you forget to use "-" or "--"?  Use -h for help!');
+        server.close();
+    }
 }
-
 
 process.on('uncaughtException', function (er) {
     console.log('---UNCAUGHT EXCEPTION: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>');
