@@ -56,12 +56,7 @@ var optionsgit = {
 optionsgit.headers = {};
 optionsgit.headers['User-Agent'] = 'gitstats';
 
-//var port          = config.port || 3000;
-//var host          = config.host || 'localhost';
-
 //var T               = new Throttler(config);
-
-//require(path.join(__dirname, 'routes.js'))(app); // load our routes and pass in our app, config, and fully configured passport
 
 // set the token for GitHub queries
 if ((config.git.personaltoken === '') && (config.git.appid === '') && (config.git.appsecret === '') ) {
