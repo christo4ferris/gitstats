@@ -6,13 +6,34 @@
       "title": "dWOpen Dashboard",
       "hits": 0,
       "description": "",
-      "panelsJSON": "[{\"col\":1,\"id\":\"Commits-by-Month\",\"panelIndex\":5,\"row\":3,\"size_x\":6,\"size_y\":3,\"type\":\"visualization\"},{\"col\":1,\"id\":\"Top-25-Committers\",\"panelIndex\":6,\"row\":6,\"size_x\":6,\"size_y\":3,\"type\":\"visualization\"},{\"col\":7,\"id\":\"Events\",\"panelIndex\":7,\"row\":6,\"size_x\":6,\"size_y\":3,\"type\":\"visualization\"},{\"col\":7,\"id\":\"Stargazers-by-Month\",\"panelIndex\":8,\"row\":3,\"size_x\":6,\"size_y\":3,\"type\":\"visualization\"},{\"id\":\"Projects\",\"type\":\"visualization\",\"panelIndex\":9,\"size_x\":2,\"size_y\":2,\"col\":1,\"row\":1},{\"id\":\"Contributors\",\"type\":\"visualization\",\"panelIndex\":10,\"size_x\":2,\"size_y\":2,\"col\":3,\"row\":1},{\"id\":\"Stargazers\",\"type\":\"visualization\",\"panelIndex\":11,\"size_x\":2,\"size_y\":2,\"col\":5,\"row\":1},{\"id\":\"Commits\",\"type\":\"visualization\",\"panelIndex\":12,\"size_x\":3,\"size_y\":2,\"col\":7,\"row\":1},{\"id\":\"Pull-Requests\",\"type\":\"visualization\",\"panelIndex\":13,\"size_x\":3,\"size_y\":2,\"col\":10,\"row\":1}]",
+      "panelsJSON": "[{\"col\":1,\"id\":\"Commits-by-Month\",\"panelIndex\":5,\"row\":6,\"size_x\":6,\"size_y\":4,\"type\":\"visualization\"},{\"col\":7,\"id\":\"Stargazers-by-Month\",\"panelIndex\":8,\"row\":6,\"size_x\":6,\"size_y\":4,\"type\":\"visualization\"},{\"col\":5,\"id\":\"Contributors\",\"panelIndex\":10,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"},{\"col\":7,\"id\":\"Stargazers\",\"panelIndex\":11,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"},{\"col\":9,\"id\":\"Commits\",\"panelIndex\":12,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"},{\"col\":11,\"id\":\"Pull-Requests\",\"panelIndex\":13,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"},{\"col\":1,\"id\":\"Commits-w-slash-w\",\"panelIndex\":14,\"row\":10,\"size_x\":6,\"size_y\":4,\"type\":\"visualization\"},{\"col\":7,\"id\":\"Stargazers-w-slash-w\",\"panelIndex\":15,\"row\":10,\"size_x\":6,\"size_y\":4,\"type\":\"visualization\"},{\"col\":1,\"id\":\"Top-Committers\",\"panelIndex\":16,\"row\":3,\"size_x\":12,\"size_y\":3,\"type\":\"visualization\"},{\"col\":1,\"id\":\"Activity\",\"panelIndex\":17,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"},{\"col\":3,\"id\":\"Projects-with-Commits\",\"panelIndex\":18,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"}]",
       "optionsJSON": "{\"darkTheme\":true}",
       "uiStateJSON": "{}",
       "version": 1,
-      "timeRestore": false,
+      "timeRestore": true,
+      "timeTo": "now",
+      "timeFrom": "now-7M",
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"filter\":[{\"query\":{\"query_string\":{\"analyze_wildcard\":true,\"query\":\"*\"}}}]}"
+        "searchSourceJSON": "{\"filter\":[{\"query\":{\"query_string\":{\"query\":\"*\",\"analyze_wildcard\":true}}}]}"
+      }
+    }
+  },
+  {
+    "_id": "dWOpen-Dashboard-original-22",
+    "_type": "dashboard",
+    "_source": {
+      "title": "dWOpen Dashboard - original 22",
+      "hits": 0,
+      "description": "",
+      "panelsJSON": "[{\"col\":1,\"id\":\"Commits-by-Month\",\"panelIndex\":5,\"row\":6,\"size_x\":6,\"size_y\":4,\"type\":\"visualization\"},{\"col\":7,\"id\":\"Stargazers-by-Month\",\"panelIndex\":8,\"row\":6,\"size_x\":6,\"size_y\":4,\"type\":\"visualization\"},{\"col\":5,\"id\":\"Contributors\",\"panelIndex\":10,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"},{\"col\":7,\"id\":\"Stargazers\",\"panelIndex\":11,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"},{\"col\":9,\"id\":\"Commits\",\"panelIndex\":12,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"},{\"col\":11,\"id\":\"Pull-Requests\",\"panelIndex\":13,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"},{\"col\":1,\"id\":\"Commits-w-slash-w\",\"panelIndex\":14,\"row\":10,\"size_x\":6,\"size_y\":4,\"type\":\"visualization\"},{\"col\":7,\"id\":\"Stargazers-w-slash-w\",\"panelIndex\":15,\"row\":10,\"size_x\":6,\"size_y\":4,\"type\":\"visualization\"},{\"col\":1,\"id\":\"Top-Committers\",\"panelIndex\":16,\"row\":3,\"size_x\":12,\"size_y\":3,\"type\":\"visualization\"},{\"col\":1,\"id\":\"Activity\",\"panelIndex\":17,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"},{\"col\":3,\"id\":\"Projects-with-Commits\",\"panelIndex\":18,\"row\":1,\"size_x\":2,\"size_y\":2,\"type\":\"visualization\"}]",
+      "optionsJSON": "{\"darkTheme\":true}",
+      "uiStateJSON": "{}",
+      "version": 1,
+      "timeRestore": true,
+      "timeTo": "now",
+      "timeFrom": "now-7M",
+      "kibanaSavedObjectMeta": {
+        "searchSourceJSON": "{\"filter\":[{\"query\":{\"query_string\":{\"query\":\"doc.repofullname:(\\\"jasnell/activitystrea.ms\\\" or \\\"maximilien/i18n4go\\\" or \\\"ibm-mil/ibm-ready-app-for-retail\\\" or \\\"ibm-mil/ibm-ready-app-for-banking\\\" or \\\"ibm-mil/ibm-ready-app-for-healthcare\\\" or \\\"ibm-mil/ibm-ready-app-for-insurance\\\" or \\\"cognitive-catalyst/cognitive-catalyst\\\" or \\\"gaiandb/gaiandb\\\" or \\\"ibm-et/spark-kernel\\\" or \\\"iqbalmohomed/clampify\\\" or \\\"cloudviz/agentless-system-crawler\\\" or \\\"runtimetools/appmetrics\\\" or \\\"ibm-cds-labs/pipes\\\" or \\\"ibm-cds-labs/metrics-collector\\\" or \\\"ibm-cds-labs/metrics-analytics\\\" or \\\"node-red/node-red\\\" or \\\"openstack/storlets\\\" or \\\"ibm-security-innovation/libsecurity-go\\\" or \\\"shmul/mule\\\" or \\\"litong01/object-storage-for-bluemix\\\" or \\\"ibm-design/web-animations\\\" or \\\"ibm-design/ios-animations\\\" or \\\"ibm-design/web-animations\\\" or \\\"ibm-design/ios-animations\\\")\",\"analyze_wildcard\":true}}}]}"
       }
     }
   }
