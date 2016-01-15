@@ -71,6 +71,7 @@ long as you specify the correct `type`, as demonstrated below:
 
 ## Run the gitstats collector
 Run the collector with the `--deletedb` flag the first time.  You may run it with the `-c` flag thereafter.
+
 <strong>note:</strong> If you subsequently use the `--deletedb` flag, you will also need to reset the logstash 
 sequence path.  This is stored in a file located in the `\bin` directory of you logstash deployment, and will
 be named according to the value of the `sequence_path` attribute contained in `logstash-sample.conf`.
@@ -97,7 +98,9 @@ Create the ElasticSearch index using the following command:
 If your instance of ElasticSearch requires basic auth, use this:
 `curl -u username -XPUT http://[Elasticsearch IP]:[port]/sample -d '[paste the contents of dwopen-logstash-index.json]'`
 Replace `username` with - you guessed it - your ElasticSearch username.  You will be prompted for the password.
+
 NOTE 1: the json file contains line breaks for readability; you will need to remove the linebreaks manually, or with a free online tool such as [Text Fixer](http://www.textfixer.com/tools/remove-line-breaks.php)
+
 NOTE 2: `sample` is the name of the created index and should also be used in `logstash.conf` - refer to the `db:name` parameter in the Configuration section below.
 After running the command, you should get a response like this:
 `{"acknowledged":true}`
