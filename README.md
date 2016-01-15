@@ -1,7 +1,6 @@
 gitstats - analytics for Open Source
 ---------------------
-![Gitstats dashboard](https://raw.githubusercontent.com/JacquesPerrault/jacquesperrault.github.io/master/images/gitstats_kibana-screenshot.jpg)
-
+![Gitstats dashboard](https://raw.githubusercontent.com/JacquesPerrault/jacquesperrault.github.io/master/images/gitstats_kibana_screenshot.jpg)
 # Overview
 
 <strong>gitstats</strong> reads GitHub data and feeds structured data to an ELK stack (Elasticsearch, Logstash, Kibana).
