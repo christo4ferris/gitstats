@@ -1,5 +1,6 @@
-gitstats
+gitstats - analytics for Open Source
 ---------------------
+![Gitstats dashboard](https://raw.githubusercontent.com/JacquesPerrault/jacquesperrault.github.io/master/images/gitstats_kibana-screenshot.jpg)
 
 # Overview
 
