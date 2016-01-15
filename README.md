@@ -1,6 +1,6 @@
-gitstats
+gitstats - analytics for Open Source
 ---------------------
-
+![Gitstats dashboard](https://raw.githubusercontent.com/JacquesPerrault/jacquesperrault.github.io/master/images/gitstats_kibana_screenshot.jpg)
 # Overview
 
 <strong>gitstats</strong> reads GitHub data and feeds structured data to an ELK stack (Elasticsearch, Logstash, Kibana).
@@ -16,10 +16,7 @@ Options:
         -h, --help      print help (this message)
 ```
 # Configuration
-<strong>gitstats</strong> allows you to use a [personal access token](https://github.com/settings/tokens) 
-or a [registered application id/secret](https://github.com/settings/developers).  You only need to provide one
-or the other, <strong>gitstats</strong> will use whichever is provided.  If you provide both, it will default to the registered
-application credentials.
+<strong>gitstats</strong> requires you to use a [personal access token](https://github.com/settings/tokens) 
 ## Update the configuration file
 Make a copy of `config-sample.js` and name it `config.js`.
 Open `config.js` in a text editor and update as described below:
@@ -45,10 +42,13 @@ Open `config.js` in a text editor and update as described below:
     'hostname': 'api.github.com',
     'port': 443,
     'protocol': 'https:',
-    'appid': '',                    [client id, GitHub registered application
-                                     use appid & appsecret OR personaltoken, not both]
-    'appsecret': '',                [client secret, GitHub registered application]
     'personaltoken': ''             [GitHub personal access token]
+},
+'bluemix' : {
+    'applicationId'     : '',       [BlueMix application id]
+    'applicationSecret' : '',       [BlueMix application secret]
+    'applicationRoute'  : '',       [BlueMix application route]
+    'session'           : ''        [session hash]
 }
 
 ```
@@ -72,8 +72,12 @@ long as you specify the correct `type`, as demonstrated below:
 ## Run the gitstats collector
 Run the collector with the `--deletedb` flag the first time.  You may run it with the `-c` flag thereafter.
 
+<strong>note:</strong> If you subsequently use the `--deletedb` flag, you will also need to reset the logstash 
+sequence path.  This is stored in a file located in the `\bin` directory of you logstash deployment, and will
+be named according to the value of the `sequence_path` attribute contained in `logstash-sample.conf`.
+
 ## Set up the middleware
-<strong>gitstats</strong> requires the following middleware:
+<strong>gitstats</strong> requires the following middleware/services:
 <ul>
 <li>[NodeJS](https://nodejs.org/) v4.2.1+</li>
 <li>[ElasticSearch](https://www.elastic.co/products/elasticsearch) v2.1+</li>
@@ -83,9 +87,10 @@ Run the collector with the `--deletedb` flag the first time.  You may run it wit
 
 The instructions below assume you run all components locally; however, you may mix and match.  For example, you could run Node, CouchDb, Logstash, and Kibana locally, and point at an ElasticSearch instance in the cloud.
 
-#### 1. Install and run [CouchDB]()
-
+#### 1. Install and run a NoSQL data store
+Virtually any NoSQL database will do.  You can either install your own, or point at an existing NoSQL cloud service.
 #### 2. Install and run [Elasticsearch]()
+You can either install your own, or point at an existing ElasticSearch cloud service.
 
 Create the ElasticSearch index using the following command:
 `curl -XPUT http://[Elasticsearch IP]:[port]/sample -d '[paste the contents of dwopen-logstash-index.json]'`
@@ -93,15 +98,18 @@ Create the ElasticSearch index using the following command:
 If your instance of ElasticSearch requires basic auth, use this:
 `curl -u username -XPUT http://[Elasticsearch IP]:[port]/sample -d '[paste the contents of dwopen-logstash-index.json]'`
 Replace `username` with - you guessed it - your ElasticSearch username.  You will be prompted for the password.
+
 NOTE 1: the json file contains line breaks for readability; you will need to remove the linebreaks manually, or with a free online tool such as [Text Fixer](http://www.textfixer.com/tools/remove-line-breaks.php)
+
 NOTE 2: `sample` is the name of the created index and should also be used in `logstash.conf` - refer to the `db:name` parameter in the Configuration section below.
 After running the command, you should get a response like this:
 `{"acknowledged":true}`
 
 #### 3. Install [Logstash]()
+You can either install your own, or point at an existing Logstash cloud service.
 Create a logstash.conf file from the template provided (logstash-sample.conf)
-
 #### 4. Install [Kibana]()
+You can either install your own, or point at an existing Kibana cloud service.
 Be sure to update `\config\kibana.yml` to point it at your ElasticSearch instance
 
 Open Kibana in a browser, then open Settings and then Indices
