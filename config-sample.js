@@ -20,8 +20,12 @@ module.exports = {
         'hostname': 'api.github.com',
         'port': 443,
         'protocol': 'https:',
-        'appid': '',          // use appid & appsecret OR personaltoken
-        'appsecret': '',
         'personaltoken': ''
+    },
+    'bluemix' : {
+        'applicationId'     : '',
+        'applicationSecret' : '',
+        'applicationRoute'  : '',
+        'session'           : ''
     }
 };
