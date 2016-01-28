@@ -7,6 +7,10 @@ gitstats - analytics for Open Source
 
 # Usage
 ```
+NOTE: as of version 0.3.0, these options will be ignored.  Gitstats will automatically launch with the --deletedb option, 
+and will cycle once an hour during steady-state operations using the -c option.  The code to use these option is present,
+just commented out.
+
 node app.js [option]
 
 Options:
