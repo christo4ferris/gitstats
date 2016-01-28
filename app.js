@@ -9,26 +9,33 @@ var parse_link        = require('./src/parse_link');
 var handle_response   = require('./src/handle_response');
 var config            = require('./config');
 var orgs              = require(config.orgsfile);
-
-var token             = '';
+var uuid              = require('uuid');
+var gittoken          = config.git.personaltoken;
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
+var git_protocol      = config.git.protocol === 'https:' ? https : http;
 var timer             = null;
 var stack             = [];
 var processed_count   = 0;
 
-// initialize IBM BlueMix
-//var bluemix           = require('ibmbluemix');
-//bluemix.initialize(config.bluemix);
-//var logger            = bluemix.getLogger();
+// initialize Logging for IBM BlueMix
+var winston           = require('winston');
+var bluemix           = require('ibmbluemix');
+var logconfig = {
+    transports: [
+        new (winston.transports.Console)()
+    ] ,
+    filename:true,
+    methodname:true,
+    linenumber: true
+};
+var logger            = bluemix.getLogger(logconfig);
+
 var port              = (process.env.VCAP_APP_PORT || 3000);
 var host              = (process.env.VCAP_APP_HOST || 'localhost');
 
-
 var optionsdb = {
-    keepAlive: true,
-    maxSockets: Infinity,
-    maxFreeSockets: 256,
-    keepAliveMsecs: 10000,
+    keepAlive : true,
+    agent: db_keepAliveAgent,
 	path: '/' + config.db.name,
 	host: config.db.host,
 	port: config.db.port,
@@ -41,42 +48,31 @@ if (config.db.user != '') {
     optionsdb.headers = { 'Authorization': 'Basic ' + new Buffer(config.db.user + ':' + config.db.password).toString('base64')}
 }
 
+// make sure a GitHub token has been configured
+if (config.git.personaltoken === '') {
+  console.log('---: GitHub credentials not provided.  You MUST set a personal access token in the config.js file.')
+  process.exit();
+}
+
 var optionsgit = {
-    keepAlive: true,
-    maxSockets: Infinity,
-    maxFreeSockets: 256,
-    keepAliveMsecs: 1000,
+    keepAlive : true,
 	hostname: config.git.hostname,
 	port: config.git.port,
     protocol: config.git.protocol,
-	method: 'GET'
+	method: 'GET',
+    headers: {
+        'User-Agent': 'gitstats',
+        'Content-Type': 'application/json'
+    }
 };
 
-
-optionsgit.headers = {};
-optionsgit.headers['User-Agent'] = 'gitstats';
+var db_keepAliveAgent = new db_protocol.Agent(optionsdb);
+var git_keepAliveAgent = new git_protocol.Agent(optionsgit);
 
 //var T               = new Throttler(config);
 
-// set the token for GitHub queries
-if ((config.git.personaltoken === '') && (config.git.appid === '') && (config.git.appsecret === '') ) {
-  console.log('---: GitHub credentials not provided.  You MUST provide a personal access token or a registered application id/secret.')
-  process.exit();
-}
 
-if ((config.git.personaltoken === '') && ((config.git.appid === '') || (config.git.appsecret === '') )) {
-  console.log('---: Incomplete GitHub credentials not provided.  You MUST provide a personal access token or a registered application id/secret.')
-  process.exit();
-}
 
-if ((config.git.appid != '') && (config.git.appsecret != '')){
-  token = '&client_id=' + config.git.appid + '&client_secret=' + config.git.appsecret;
-  //console.log('---: Using REGISTERED APPLICATION credentials');
-}
-else {
-  token = '&access_token=' + config.git.personaltoken;
-  //console.log('---: Using PERSONAL ACCESSS token');
-}
 
 Date.prototype.getWeekNo = function(){
 	var d = new Date(+this);
@@ -96,15 +92,22 @@ function process_queue() {
                     Array(21-item.func.name.length).join(' '),item.source,
                     Array(10-item.source.length).join(' '),
                     r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3]);
+
         var req = req_protocol.request(item.opts, item.func);
 
-        processed_count = processed_count + 1;
         req.on('error', function(e) {
-            console.log('--- PROCESS_QUEUE: ', e.message);
+            console.log('--- PROCESS_QUEUE: ERROR: ', e.message);
+            console.log(e.stack);
             console.error(e);
         });
 
+        req.setTimeout(2000, function(){
+            console.log('--- WARNTIMEOUT', item.counter);
+            req.end();
+        });
+
         req.end(function(){
+          processed_count = processed_count + 1;
           var index = openqueue.indexOf(item.counter);
           if( index > -1) {
               openqueue.splice(index,1);
@@ -184,7 +187,8 @@ function get_stargazers(response) {
                 var opts = clone(optionsdb);
                 // create a sha digest to be used as the docid
                 var shasum = crypto.createHash('sha1');
-                shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
+                //shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
+                shasum.update(item.starred_at + item.user.login);
                 var digest = shasum.digest('hex');
                 opts.path += '/' + digest;
                 var r = response.socket._httpMessage.path.split('/');
@@ -196,7 +200,7 @@ function get_stargazers(response) {
                 doc.login_id = item.user.id;
                 var date = new Date(doc.date);
                 doc.week = date.getWeekNo();
-
+                doc.url = item.url;
                 // Get the repo full name, or the repo ID
                 // The response body for events does not contain the name or ID of the
                 // repository, and the nature of the throttling we are performing
@@ -245,6 +249,7 @@ function get_pull_requests(response) {
 				opts.path += '/' + item.head.sha;
 				var r = item.url.split('/');
 				doc.type = 'pull_request';
+                doc.name = item.name;
 				doc.org = r[4];
 				doc.repo = r[5];
 				doc.repofullname = (r[4] + '/' + r[5]).toLowerCase();
@@ -307,6 +312,7 @@ function get_commits(response) {
 					opts.path += '/' + item.sha;
 					var r = item.url.split('/');
 					doc.type = 'commit';
+                    doc.name = item.name;
 					doc.org = r[4];
 					doc.repo = r[5];
 					doc.repofullname = (r[4] + '/' + r[5]).toLowerCase();
@@ -375,7 +381,7 @@ function get_repos(response) {
 			// get commits
             if (config.collect_commits) {
                 t.func = get_commits;
-                t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100'  + token;
+                t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100' + '&access_token=' + gittoken + id + '&call=commits';
                 //T.throttle(t);
                 throttle(t);
                 //console.log('--- GET_REPOS: get_commits: ' + t.opts.path);
@@ -384,7 +390,7 @@ function get_repos(response) {
 			// get pull requests
 			if (config.collect_pull_requests) {
                   s.func = get_pull_requests;
-                  s.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all'  + token;
+                  s.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all' + '&access_token=' + gittoken + id + '&call=pulls';
                   s.source = 'get_repos';
                   //T.throttle(s);
                   throttle(s);
@@ -395,7 +401,7 @@ function get_repos(response) {
             if (config.collect_stargazers) {
                 u.func = get_stargazers;
                 u.opts.method = 'GET';
-                u.opts.path = '/repos/' + r[0] + '/' + r[1] + '/stargazers?per_page=100' + token;  // event api does not offer a "since" atttribute
+                u.opts.path = '/repos/' + r[0] + '/' + r[1] + '/stargazers?per_page=100' + '&access_token=' + gittoken + id + '&call=stars';  // event api does not offer a "since" atttribute
                 u.opts.headers = {
                     'Accept': 'application/vnd.github.v3.star+json',
                     'User-Agent': 'gitstats',
@@ -456,7 +462,10 @@ function init_db() {
     doc.views = {
         "pull_requests": {"map":"function(doc) {\n\tif (doc.type === 'pull_request') {\n\t\tvar es_doc = {};\n\t\tes_doc._rev = doc._rev;\n\t\tes_doc.org = doc.org;\n\t\tes_doc.repo = doc.repo;\n\t\tes_doc.login = doc.login;\n\t\tes_doc.name = doc.name;\n\t\tes_doc.email = doc.email;\n\t\tes_doc.date = doc.date;\n\t\tes_doc.url = doc.url;\n\t\temit(doc.repofullname,es_doc);\n\t}\n}","reduce":"_count"},
         "commits": {"map":"function(doc) {\n\tif (doc.type === 'commit') {\n\t\tvar es_doc = {};\n\t\tes_doc._rev = doc._rev;\n\t\tes_doc.org = doc.org;\n\t\tes_doc.repo = doc.repo;\n\t\tes_doc.login = doc.login;\n\t\tes_doc.name = doc.name;\n\t\tes_doc.email = doc.email;\n\t\tes_doc.date = doc.date;\n\t\tes_doc.url = doc.url;\n\t\temit(doc.repofullname,es_doc);\n\t}\n}","reduce":"_count"},
-        "events": {"map":"function(doc) {\n\tif (doc.type === 'event') {\n\t\temit(doc.date,doc);\n\t}\n}","reduce":"_count"}
+        "events": {"map":"function(doc) {\n\tif (doc.type === 'event') {\n\t\temit(doc.date,doc);\n\t}\n}","reduce":"_count"},
+        "projects": {"map":"function(doc) {\n\tif (doc.type === 'lastpolled') {\n\t\tvar harveyballs = [\n\t\t\t'<div class=\"harvey25 center\"></div>',\n\t\t\t'<div class=\"harvey50 center\"></div>',\n\t\t\t'<div class=\"harvey75 center\"></div>',\n\t\t\t'<div class=\"harvey100 center\"></div>'\n\t\t];\n\t\temit(doc.repofullname, {\n\t\t\t'project':doc.repofullname,\n\t\t\t'one':harveyballs[0],\n\t\t\t'two':harveyballs[1],\n\t\t\t'three':harveyballs[2],\n\t\t\t'four':harveyballs[3],\n\t\t\t'five':harveyballs[2]\n\t\t});\n\t}\n}","reduce":"_count"},
+        "unique_contributors": {"map":"function(doc) {\n\tif (doc.type === 'commit') {\n\t\temit([doc.repofullname], 1);\n\t}\n}\n","reduce":"function (keys, values) {\n\treturn sum(values);\n}\n"},
+        "commits-by-repo": {"map":"function(doc) {\n\tif (doc.type === 'commit') {\n\t\temit([doc.repofullname], 1);\n\t}\n}\n","reduce":"function (keys, values) {\n\treturn sum(values);\n}\n"}
     }
     doc.language = 'javascript';
     var db = db_protocol.request(opts, handle_response);
@@ -576,7 +585,7 @@ function load_orgs() {
 				t.func = get_repos;
 				var org = item.name;
 				t.opts = clone(optionsgit);
-				t.opts.path = '/' + item.type + 's/' + org + '/repos?per_page=100' + token;
+				t.opts.path = '/' + item.type + 's/' + org + '/repos?per_page=100';
                 t.source = 'load_orgs';
 				//T.throttle(t);
                 throttle(t);
@@ -590,11 +599,12 @@ function load_orgs() {
                 Promise.resolve(get_lastpolled(repo)
                     .then (function (result) {
                         var since = '&since=' + result.date;
+                        var id = uuid.v4();
 
                         // get commits
                         if (config.collect_commits) {
                             t.func = get_commits;
-                            t.opts.path = '/repos/' + repo + '/commits?per_page=100' + since + token;
+                            t.opts.path = '/repos/' + repo + '/commits?per_page=100' + since + '&access_token=' + gittoken + '&id=' + id + '&call=commits';
                             //T.throttle(t);
                             throttle(t);
                             //console.log('--- LOAD ORGS: get_commits: ' + t.opts.path);
@@ -603,7 +613,7 @@ function load_orgs() {
                         // get pull requests
                         if (config.collect_pull_requests) {
                             s.func = get_pull_requests;
-                            s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + token;
+                            s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + '&access_token=' + gittoken + '&id=' + id + '&call=pulls';;
                             s.source = 'load_orgs';
                             //T.throttle(s);
                             throttle(s);
@@ -614,7 +624,7 @@ function load_orgs() {
                         if (config.collect_stargazers) {
                             u.func = get_stargazers;
                             u.opts.method = 'GET';
-                            u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + token;  // event api does not offer a "since" atttribute
+                            u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + '&access_token=' + gittoken + '&id=' + id + '&call=stars';;  // event api does not offer a "since" atttribute
                             u.opts.headers = {
                                 'Accept': 'application/vnd.github.v3.star+json',
                                 'User-Agent': 'gitstats',
@@ -645,7 +655,7 @@ function print_help(){
 
 
 function initServer() {
-    console.log('Initializing gitstats microservice...')
+    console.log('Initializing gitstats microservice...');
     var arg_deletedb  = process.argv.indexOf('--deletedb') != -1 ? true : false;
     var arg_help      = (process.argv.indexOf('-h') != -1) || (process.argv.indexOf('--help') != -1) ? true : false;
     var arg_collect   = (process.argv.indexOf('-c') != -1) || (process.argv.indexOf('--collect') != -1) ? true : false;
@@ -657,8 +667,9 @@ function initServer() {
     if (arg_collect) create_db();
 
     if (!(arg_deletedb || arg_help || arg_collect)) {
-        console.log('\n--- GITSTATS: No known argument provided - did you forget to use "-" or "--"?  Use -h for help!');
-        server.close();
+        delete_db()
+        //console.log('\n--- GITSTATS: No known argument provided - did you forget to use "-" or "--"?  Use -h for help!');
+        //server.close();
     }
 }
 
@@ -668,9 +679,13 @@ process.on('uncaughtException', function (er) {
     console.error(er.stack);
     console.log('---UNCAUGHT EXCEPTION: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<');
     if ((stack.length === 0) && (donequeue.length > 0)) {
-      stack = donequeue;
-      donequeue = []
-      process_queue();
+/*        donequeue.forEach(function(item) {
+            throttle(item);
+            console.log('--- REQUEUING: ', item.count, item.uuid);
+        })*/
+/*        stack = donequeue;
+        donequeue = []
+        process_queue();*/
     } else if (stack.length === 0) {
         clearInterval(timer);
         timer = null;
@@ -681,12 +696,11 @@ process.on('uncaughtException', function (er) {
 
 
 // set timer for hourly refresh
-/*
 setInterval(function () {
   create_db();
   console.log('---: Refreshed data at: ' + Date.now());
 }, 3600000);
-*/
+
 
 
 function handleRequest(request, response){

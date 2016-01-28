@@ -43,12 +43,6 @@ Open `config.js` in a text editor and update as described below:
     'port': 443,
     'protocol': 'https:',
     'personaltoken': ''             [GitHub personal access token]
-},
-'bluemix' : {
-    'applicationId'     : '',       [BlueMix application id]
-    'applicationSecret' : '',       [BlueMix application secret]
-    'applicationRoute'  : '',       [BlueMix application route]
-    'session'           : ''        [session hash]
 }
 
 ```

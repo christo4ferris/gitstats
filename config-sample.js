@@ -21,11 +21,5 @@ module.exports = {
         'port': 443,
         'protocol': 'https:',
         'personaltoken': ''
-    },
-    'bluemix' : {
-        'applicationId'     : '',
-        'applicationSecret' : '',
-        'applicationRoute'  : '',
-        'session'           : ''
     }
 };

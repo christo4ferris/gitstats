@@ -1,8 +1,8 @@
----
 applications:
-- name: gitstats
-  memory: 64M
+- path: .
+  memory: 256M
   instances: 1
-  host: vitality
   domain: mybluemix.net
-  buildpack: https://github.com/cloudfoundry/staticfile-buildpack.git
+  name: vitality
+  host: vitality
+  disk_quota: 1024M
