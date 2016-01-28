@@ -68,10 +68,8 @@ long as you specify the correct `type`, as demonstrated below:
 ```
 
 ## Run the gitstats collector
-Run the collector with the `--deletedb` flag the first time.  You may run it with the `-c` flag thereafter.
-
-<strong>note:</strong> If you subsequently use the `--deletedb` flag, you will also need to reset the logstash 
-sequence path.  This is stored in a file located in the `\bin` directory of you logstash deployment, and will
+<strong>note:</strong> You will also need to reset the logstash sequence path each time the database is reset.  
+This is stored in a file located in the `\bin` directory of you logstash deployment, and will
 be named according to the value of the `sequence_path` attribute contained in `logstash-sample.conf`.
 
 ## Set up the middleware
