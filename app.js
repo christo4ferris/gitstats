@@ -10,16 +10,16 @@ var handle_response   = require('./src/handle_response');
 var config            = require('./config');
 var orgs              = require(config.orgsfile);
 var uuid              = require('uuid');
-var fetch             = require('node-fetch');
+//var fetch             = require('node-fetch');
 var gittoken          = config.git.personaltoken;
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
-var git_protocol      = config.git.protocol === 'https:' ? https : http;
+//var git_protocol      = config.git.protocol === 'https:' ? https : http;
 var timer             = null;
 var stack             = [];
 var processed_count   = 0;
 
 // initialize Logging for IBM BlueMix
-var winston           = require('winston');
+/*var winston           = require('winston');
 var bluemix           = require('ibmbluemix');
 var logconfig = {
     transports: [
@@ -29,8 +29,9 @@ var logconfig = {
     methodname:true,
     linenumber: true
 };
-var logger            = bluemix.getLogger(logconfig);
 
+var logger            = bluemix.getLogger(logconfig);
+*/
 var port              = (process.env.VCAP_APP_PORT || 3000);
 var host              = (process.env.VCAP_APP_HOST || 'localhost');
 
@@ -68,7 +69,7 @@ var optionsgit = {
 };
 
 var db_keepAliveAgent = new db_protocol.Agent(optionsdb);
-var git_keepAliveAgent = new git_protocol.Agent(optionsgit);
+//var git_keepAliveAgent = new git_protocol.Agent(optionsgit);
 
 //var T               = new Throttler(config);
 
@@ -378,6 +379,7 @@ function get_repos(response) {
 			t.opts = clone(optionsgit);
             s.opts = clone(optionsgit);
             u.opts = clone(optionsgit);
+            var id = uuid.v4();
 
 			// get commits
             if (config.collect_commits) {
@@ -614,7 +616,7 @@ function load_orgs() {
                         // get pull requests
                         if (config.collect_pull_requests) {
                             s.func = get_pull_requests;
-                            s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + '&access_token=' + gittoken + '&id=' + id + '&call=pulls';;
+                            s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + '&access_token=' + gittoken + '&id=' + id + '&call=pulls';
                             s.source = 'load_orgs';
                             //T.throttle(s);
                             throttle(s);
@@ -625,7 +627,7 @@ function load_orgs() {
                         if (config.collect_stargazers) {
                             u.func = get_stargazers;
                             u.opts.method = 'GET';
-                            u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + '&access_token=' + gittoken + '&id=' + id + '&call=stars';;  // event api does not offer a "since" atttribute
+                            u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + '&access_token=' + gittoken + '&id=' + id + '&call=stars';  // event api does not offer a "since" atttribute
                             u.opts.headers = {
                                 'Accept': 'application/vnd.github.v3.star+json',
                                 'User-Agent': 'gitstats',
