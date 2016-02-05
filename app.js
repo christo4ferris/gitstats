@@ -10,6 +10,7 @@ var handle_response   = require('./src/handle_response');
 var config            = require('./config');
 var orgs              = require(config.orgsfile);
 var uuid              = require('uuid');
+var fetch             = require('node-fetch');
 var gittoken          = config.git.personaltoken;
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
 var git_protocol      = config.git.protocol === 'https:' ? https : http;
@@ -464,7 +465,7 @@ function init_db() {
         "commits": {"map":"function(doc) {\n\tif (doc.type === 'commit') {\n\t\tvar es_doc = {};\n\t\tes_doc._rev = doc._rev;\n\t\tes_doc.org = doc.org;\n\t\tes_doc.repo = doc.repo;\n\t\tes_doc.login = doc.login;\n\t\tes_doc.name = doc.name;\n\t\tes_doc.email = doc.email;\n\t\tes_doc.date = doc.date;\n\t\tes_doc.url = doc.url;\n\t\temit(doc.repofullname,es_doc);\n\t}\n}","reduce":"_count"},
         "events": {"map":"function(doc) {\n\tif (doc.type === 'event') {\n\t\temit(doc.date,doc);\n\t}\n}","reduce":"_count"},
         "projects": {"map":"function(doc) {\n\tif (doc.type === 'lastpolled') {\n\t\tvar harveyballs = [\n\t\t\t'<div class=\"harvey25 center\"></div>',\n\t\t\t'<div class=\"harvey50 center\"></div>',\n\t\t\t'<div class=\"harvey75 center\"></div>',\n\t\t\t'<div class=\"harvey100 center\"></div>'\n\t\t];\n\t\temit(doc.repofullname, {\n\t\t\t'project':doc.repofullname,\n\t\t\t'one':harveyballs[0],\n\t\t\t'two':harveyballs[1],\n\t\t\t'three':harveyballs[2],\n\t\t\t'four':harveyballs[3],\n\t\t\t'five':harveyballs[2]\n\t\t});\n\t}\n}","reduce":"_count"},
-        "unique_contributors": {"map":"function(doc) {\n\tif (doc.type === 'commit') {\n\t\temit([doc.repofullname], 1);\n\t}\n}\n","reduce":"function (keys, values) {\n\treturn sum(values);\n}\n"},
+        "unique_contributors": {"map":"function(doc) {\n\tif (doc.type === 'commit') {\n\t\temit([doc.repofullname,doc.login], 1);\n\t}\n}\n","reduce":"function (keys, values) {\n\treturn sum(values);\n}\n"},
         "commits-by-repo": {"map":"function(doc) {\n\tif (doc.type === 'commit') {\n\t\temit([doc.repofullname], 1);\n\t}\n}\n","reduce":"function (keys, values) {\n\treturn sum(values);\n}\n"}
     }
     doc.language = 'javascript';
