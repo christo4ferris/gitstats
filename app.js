@@ -6,32 +6,40 @@ var http              = require('http');
 var https             = require('https');
 //var Throttler       = require('./src/throttle');
 var parse_link        = require('./src/parse_link');
-var handle_response   = require('./src/handle_response');
+//var handle_response   = require('./src/handle_response');
 var config            = require('./config');
 var orgs              = require(config.orgsfile);
 var uuid              = require('uuid');
-//var fetch             = require('node-fetch');
 var gittoken          = config.git.personaltoken;
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
 //var git_protocol      = config.git.protocol === 'https:' ? https : http;
 var timer             = null;
+var takeabreather     = null;
+var counter           = 0;
 var stack             = [];
+var openqueue         = [];
+var openqueue_db      = [];
+var pendingqueue      = [];
+var pendingqueue_db   = [];
 var processed_count   = 0;
 
-// initialize Logging for IBM BlueMix
-/*var winston           = require('winston');
-var bluemix           = require('ibmbluemix');
-var logconfig = {
+// initialize IBM BlueMix
+//var bluemix           = require('ibmbluemix');
+var winston           = require('winston');
+
+var logger = new (winston.Logger)({
     transports: [
-        new (winston.transports.Console)()
+        new (winston.transports.Console)({level: 'info'}),
+        new (winston.transports.File)({ name: 'debug-file', filename: 'gitstats_debug.log', level: 'debug' }),
+        new (winston.transports.File)({ name: 'error-file', filename: 'gitstats_error.log', level: 'warn' })
     ] ,
     filename:true,
     methodname:true,
-    linenumber: true
-};
+    linenumber: true,
+    exitOnError: false
+});
 
-var logger            = bluemix.getLogger(logconfig);
-*/
+
 var port              = (process.env.VCAP_APP_PORT || 3000);
 var host              = (process.env.VCAP_APP_HOST || 'localhost');
 
@@ -84,61 +92,160 @@ Date.prototype.getWeekNo = function(){
 };
 
 
+function handle_response(response) {
+	response.on('error', function(e) {
+		logger.error('--- HANDLE_RESPONSE: ERROR: ', response.req.path, e);
+	});
+
+    response.on('data', function() {
+        // we don't care about data here, but have to listen for it.
+    });
+
+	response.on('end', function() {
+        switch(response.statusCode) {
+            case 409:
+                //logger.debug('--- HANDLE_RESPONSE: conflict - document already exists.');
+                break;
+            case 412:
+                logger.warn('--- HANDLE_RESPONSE: precondition failed - headers do not match.');
+                break;
+            case 200:
+                logger.debug('--- HANDLE_RESPONSE: ok - success.');
+                break;
+            case 201:
+                //logger.debug('--- HANDLE_RESPONSE: created/updated.');
+                break;
+            default:
+                logger.warn('--- HANDLE_RESPONSE:', response.statusCode);
+                break;
+        }
+	})
+}
+
+
 function process_queue() {
+        // clear timer if we are taking a breather...
+/*        if (takeabreather != null) {
+            clearInterval(timer);
+            timer = null;
+            logger.info('PROCESS_QUEUE: waiting to catch our breath...');
+            return false;
+        }*/
+
         var item          = stack.shift();
         var req_protocol  = item.opts.protocol === 'https:' ? https : http;
-        var r = item.opts.path.split('/');
+        var r             = item.opts.path.split('/');
+
+        clearInterval(takeabreather);
+        takeabreather = null;
         if (!item.hasOwnProperty('source')) item.source = 'other';
-        console.log('PROCESS_QUEUE: START: item/stack size/processed: ',
-                    item.counter + '/' + stack.length + '/' + processed_count, item.func.name,
+        logger.info('PROCESS_QUEUE:',
+                    'PROCESSING: ' + item.counter,
+                    ' STACK: ' + stack.length,
+                    ' PENDING: ' + pendingqueue.length,
+                    ' COMPLETED: ' + processed_count,
+                    item.func.name,
                     Array(21-item.func.name.length).join(' '),item.source,
                     Array(10-item.source.length).join(' '),
-                    r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3]);
+                    r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3],
+                   item.opts.path);
 
         var req = req_protocol.request(item.opts, item.func);
 
         req.on('error', function(e) {
-            console.log('--- PROCESS_QUEUE: ERROR: ', e.message);
-            console.log(e.stack);
-            console.error(e);
+            logger.error('--- PROCESS_QUEUE: ERROR: ' + e);
+            req.end();
         });
 
-        req.setTimeout(2000, function(){
-            console.log('--- WARNTIMEOUT', item.counter);
+/*        req.setTimeout(2000, function(){
+            logger.warn('--- TIMEOUT', item.counter, item.opts.path);
+            req.end();
+        });
+*/
+        req.end(function(){
+          processed_count = processed_count + 1;
+          logger.debug('PROCESS_QUEUE: ENDING:       ', item.counter, item.opts.path);
+        })
+
+        // reset the timer if resuming from an exception...
+        if ((timer === null) && (stack.length > 0)) {
+            timer = setInterval(process_queue, config.interval);
+        }
+  
+        // clear timer if there is no work left to do...
+        if (stack.length === 0) {
+            clearInterval(timer);
+            timer = null;
+            logger.info('PROCESS_QUEUE: queue is empty');
+        }
+}
+
+
+function process_queue_db() {
+        var item          = stack.shift();
+        var req_protocol  = item.opts.protocol === 'https:' ? https : http;
+        var r             = item.opts.path.split('/');
+
+        clearInterval(takeabreather);
+        takeabreather = null;
+        if (!item.hasOwnProperty('source')) item.source = 'other';
+        logger.info('PROCESS_QUEUE:',
+                    'PROCESSING: ' + item.counter,
+                    ' STACK: ' + stack.length,
+                    ' PENDING: ' + pendingqueue.length,
+                    ' COMPLETED: ' + processed_count,
+                    item.func.name,
+                    Array(21-item.func.name.length).join(' '),item.source,
+                    Array(10-item.source.length).join(' '),
+                    r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3],
+                   item.opts.path);
+
+        var req = req_protocol.request(item.opts, item.func);
+
+        req.on('error', function(e) {
+            logger.error('--- PROCESS_QUEUE: ERROR: ' + e);
             req.end();
         });
 
         req.end(function(){
           processed_count = processed_count + 1;
-          var index = openqueue.indexOf(item.counter);
-          if( index > -1) {
-              openqueue.splice(index,1);
-              donequeue.splice(index,1);
-          }
-          console.log('PROCESS_QUEUE: END: ', item.counter, '# of open requests: ',openqueue.toString());
-        });
-  
+          logger.debug('PROCESS_QUEUE: ENDING:       ', item.counter, item.opts.path);
+        })
+
+        // reset the timer if resuming from an exception...
+        if ((timer === null) && (stack.length > 0)) {
+            timer = setInterval(process_queue, config.interval);
+        }
+
+        // clear timer if there is no work left to do...
         if (stack.length === 0) {
             clearInterval(timer);
             timer = null;
-            console.log('PROCESS_QUEUE: queue is empty');
+            logger.info('PROCESS_QUEUE: queue is empty');
         }
 }
 
-var counter = 0;
-var openqueue = [];
-var donequeue = [];
 
 function throttle(item) {
     counter++;
     item.counter = counter;
     stack.push(item);
-    openqueue.push(counter);
-    donequeue.push(item);
+    openqueue.push(item.opts.path);
+    pendingqueue.push(item);
     if (timer === null) {
       timer = setInterval(process_queue, config.interval);
     }
 }
+
+function throttle_db(item) {
+    stack.push(item);
+    openqueue_db.push(item.opts.path);
+    pendingqueue_db.push(item);
+    if (timer_db === null) {
+      timer_db = setInterval(process_db_queue, config.interval);
+    }
+}
+
 
 // this will process the link header (if present) and invoke the requested function if a next header is present
 function get_more(response, func) {
@@ -159,9 +266,18 @@ function get_more(response, func) {
                     'Content-Type': 'application/json'
                 }  // see https://developer.github.com/v3/activity/starring
             }
-			//T.throttle(t);
-            throttle(t);
-			console.log('GET_MORE     : ',func.name,Array(21-func.name.length).join(' '), t.opts.path);
+            // check if this is a duplicate request
+            var index = openqueue.indexOf(t.opts.path);
+            if( index === -1) {
+                throttle(t);
+                logger.debug('GET_MORE     : ',func.name,Array(21-func.name.length).join(' '),
+                             'SOURCE: ', response.req.path,
+                             'NEXT: ', t.opts.path);
+            } else {
+                logger.debug('GET_MORE : DUPLICATE: ',func.name,Array(21-func.name.length).join(' '),
+                 'SOURCE: ', response.req.path,
+                 'NEXT: ', t.opts.path);
+            }
 		}
 	}
 }
@@ -169,14 +285,12 @@ function get_more(response, func) {
 function get_stargazers(response) {
     var body = '';
     if (response.statusCode != 200) {
-        console.log('get_stargazers: ' + response.socket._httpMessage.path + ' moving on... status:' + response.statusCode);
-        //console.log('headers: ', response.headers);
+        logger.error('--- GET_STARGAZERS: HTTP: ' + response.statusCode, response.headers.status, response.req.path);
         return;
     }
     get_more(response, get_stargazers);
     response.on('error', function(e) {
-        console.log('--- GET_STARGAZERS: error: ');
-        console.error(e);
+        logger.error('--- GET_STARGAZERS: GET_MORE ERROR: ' + response.req.path, e);
     });
     response.on('data', function(d) {
         body += d;
@@ -215,29 +329,37 @@ function get_stargazers(response) {
                 r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = (r[2] + '/' + r[3]).toLowerCase();
 
                 var db = db_protocol.request(opts, handle_response);
+                db.on('error', function(e) {
+                    logger.error('--- GET_STARGAZERS: DB ERROR: ' + response.req.path + ' ' + e);
+                    db.end();
+                });
+
                 db.write(JSON.stringify(doc));
                 db.end();
                 //console.log('GET_STARGAZERS: ', doc.date, doc.user, doc.user_id, opts.path);
             }
             catch (err) {
-                //console.log('GET_STARGAZERS: item: ',item);
-                console.log('GET_STARGAZERS: path: ',response.socket._httpMessage.path)
-                console.error(err);
+                logger.error('GET_STARGAZERS: ERROR: ' + response.req.path, err)
             }
-        })
+        });
+        logger.debug('--- GET_STARGAZERS: END: ', response.req.path);
+        var index = openqueue.indexOf(response.req.path);
+        if( index > -1) {
+            openqueue.splice(index,1);
+            pendingqueue.splice(index,1);
+        }
     });
 }
 
 function get_pull_requests(response) {
 	var body = '';
 	if (response.statusCode != 200) {
-		console.log('get_pull_requests: ' + response.url + ' moving on... status:' + response.statusCode);
-		console.log('headers: ', response.headers);
+        logger.warn('get_pull_requests: HTTP: ' + response.statusCode, response.headers.status, response.req.path);
 		return;
 	}
 	get_more(response, get_pull_requests);
 	response.on('error', function(e) {
-		console.error(e);
+        logger.error('--- GET_PULL_REQUESTS: GET_MORE ERROR: ' + response.req.path, e);
 	});
 	response.on('data', function(d) {
 		body += d;
@@ -265,6 +387,10 @@ function get_pull_requests(response) {
 				doc.week = date.getWeekNo();
 				doc.url = item.url;
 				var db = db_protocol.request(opts, handle_response);
+                db.on('error', function(e) {
+                    logger.error('--- GET_PULL_REQUESTS: DB ERROR: ' + response.req.path + ' ' + e);
+                    db.end();
+                });
 				db.write(JSON.stringify(doc));
 				db.end();
 
@@ -274,17 +400,28 @@ function get_pull_requests(response) {
 					doc.name = item.commit.author.name;
 					doc.email = item.commit.author.email;
 					var db2 = db_protocol.request(opts, handle_response);
+                    db2.on('error', function(e) {
+                        logger.error('--- GET_PULL_REQUESTS: DB ERROR: ' + response.req.path + ' ' + e);
+                        db2.end();
+                    });
 					db2.write(JSON.stringify(doc));
 					db2.end();
 				}
-
 				//console.log('--- GET_PULL_REQUESTS: ',doc.sha,doc.name);
 			}
 			catch (err) {
-				console.log('--- GET_PULL_REQUESTS: path: ',response.socket._httpMessage.path)
-				console.error(err);
+                logger.error('--- GET_PULL_REQUESTS: ERROR: ' + response.req.path, err);
 			}
 		});
+        // If we got this far, than the http.clientrequest has been processed and we can remove it from the queues.
+        // If the queues still have items when the stack is empty, the pendingqueue items are requeued
+        // to the stack
+        logger.debug('--- GET_PULL_REQUESTS: END: ', response.req.path);
+        var index = openqueue.indexOf(response.req.path);
+        if( index > -1) {
+            openqueue.splice(index,1);
+            pendingqueue.splice(index,1);
+        }
 	});
 }
 
@@ -292,14 +429,23 @@ function get_commits(response) {
 	if (config.collect_commits) {
 		var body = '';
 		if (response.statusCode != 200) {
-			console.log('get_commits: ' + response.url + ' moving on... status:' + response.statusCode);
-			console.log('headers: ', response.headers);
+            if (response.statusCode === 409) {
+                // An HTTP 409 from GitHub indicates the repository is empty or unavailable
+                logger.warn('--- GET_COMMITS: REPO IS EMPTY: ' + response.statusCode, response.headers.status, response.req.path);
+                var index = openqueue.indexOf(response.req.path);
+                if( index > -1) {
+                    openqueue.splice(index,1);
+                    pendingqueue.splice(index,1);
+                }
+            }
+            else {
+                logger.warn('--- GET_COMMITS: HTTP: ' + response.statusCode, response.headers.status, response.req.path);
+            }
 			return;
 		}
 		get_more(response, get_commits);
-		response.on('error', function(err) {
-            console.log('--- GET_COMMITS: path: ',response.socket._httpMessage.path)
-			console.error(err);
+		response.on('error', function(e) {
+            logger.error('--- GET_COMMITS: GET_MORE ERROR: ' + response.req.path);
 		});
 		response.on('data', function(d) {
 			body += d;
@@ -329,6 +475,10 @@ function get_commits(response) {
 					doc.week = date.getWeekNo();
 					doc.url = item.url;
 					var db = db_protocol.request(opts, handle_response);
+                    db.on('error', function(e) {
+                        logger.error('--- GET_COMMITS: DB ERROR: ' + response.req.path + ' ' + e);
+                        db.end();
+                    });
 					db.write(JSON.stringify(doc));
                     db.end();
 
@@ -339,31 +489,40 @@ function get_commits(response) {
                         doc.name = item.commit.author.name;
 						doc.email = item.commit.author.email;
 						var db2 = db_protocol.request(opts, handle_response);
+                        db2.on('error', function(e) {
+                            logger.error('--- GET_COMMITS: DB ERROR: ' + response.req.path + ' ' + e);
+                            db2.end();
+                        });
 						db2.write(JSON.stringify(doc));
 						db2.end();
 					}
-                    //console.log('GET_COMMITS: ', doc.sha);
+                    //logger.debug('--- GET_COMMITS: ', item.url);
 				}
 				catch (err) {
-					console.log('--- GET_COMMITS: path: ',response.socket._httpMessage.path)
-                    console.error(err);
+					logger.error('--- GET_COMMITS: ERROR: ', response.req.path, err);
 				}
 			});
+            logger.debug('--- GET_COMMITS: END: ', response.req.path);
+            var index = openqueue.indexOf(response.req.path);
+            if( index > -1) {
+                openqueue.splice(index,1);
+                pendingqueue.splice(index,1);
+            }
 		});
 	}
 }
 
 function get_repos(response) {
 	var body = '';
-  console.log('--- GET REPOS: ');
+  logger.debug('--- GET_REPOS: ');
 	if (response.statusCode != 200) { 
-		console.log('get_repos: ' + response.url + ' moving on... status:' + response.statusCode);
-		console.log('headers: ', response.headers);
+		logger.warn('--- GET_REPOS: HTTP: ' + response.statusCode, response.headers.status, response.req.path);
 		return; 
 	}
 	get_more(response, get_repos);
 	response.on('error', function(e) {
-		console.error(e);
+		logger.error('--- GET_REPOS: ERROR1: ' + response.req.path);
+        logger.error('--- GET_REPOS: ERROR2: ' + response.socket._httpMessage.path);
 	});
 	response.on('data', function(d) {
 		body += d;
@@ -371,7 +530,7 @@ function get_repos(response) {
 	response.on('end', function() {
 		var parsed = JSON.parse(body);
 		parsed.forEach(function (item) {
-			console.log('--- GET REPOS: processing: ' + item.full_name);
+			logger.debug('--- GET_REPOS: processing: ' + item.full_name);
 			var t = new Object();
             var s = new Object();
             var u = new Object();
@@ -379,21 +538,21 @@ function get_repos(response) {
 			t.opts = clone(optionsgit);
             s.opts = clone(optionsgit);
             u.opts = clone(optionsgit);
-            var id = uuid.v4();
 
 			// get commits
             if (config.collect_commits) {
-                t.func = get_commits;
-                t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100' + '&access_token=' + gittoken + id + '&call=commits';
-                //T.throttle(t);
-                throttle(t);
-                //console.log('--- GET_REPOS: get_commits: ' + t.opts.path);
+                  t.func = get_commits;
+                  t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100' + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_commits';
+                  t.source = 'get_repos';
+                  //T.throttle(t);
+                  throttle(t);
+                  //console.log('--- GET_REPOS: get_commits: ' + t.opts.path);
             }
 
 			// get pull requests
 			if (config.collect_pull_requests) {
                   s.func = get_pull_requests;
-                  s.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all' + '&access_token=' + gittoken + id + '&call=pulls';
+                  s.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all' + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_pull_requests';
                   s.source = 'get_repos';
                   //T.throttle(s);
                   throttle(s);
@@ -404,7 +563,8 @@ function get_repos(response) {
             if (config.collect_stargazers) {
                 u.func = get_stargazers;
                 u.opts.method = 'GET';
-                u.opts.path = '/repos/' + r[0] + '/' + r[1] + '/stargazers?per_page=100' + '&access_token=' + gittoken + id + '&call=stars';  // event api does not offer a "since" atttribute
+                u.opts.path = '/repos/' + r[0] + '/' + r[1] + '/stargazers?per_page=100' + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_stargazerss';  // event api does not offer a "since" atttribute
+                u.source = 'get_repos';
                 u.opts.headers = {
                     'Accept': 'application/vnd.github.v3.star+json',
                     'User-Agent': 'gitstats',
@@ -415,6 +575,11 @@ function get_repos(response) {
                 //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);
             }
 		});
+        var index = openqueue.indexOf(response.req.path);
+        if( index > -1) {
+            openqueue.splice(index,1);
+            pendingqueue.splice(index,1);
+        }
 	});
 }
 
@@ -422,11 +587,10 @@ function delete_db() {
     var opts = clone(optionsdb);
 	opts.method = 'DELETE';
 	var req = db_protocol.request(opts, function(response) {
-        console.log('--- DELETE_DB: connected:');
+        logger.info('--- DELETE_DB: connected:');
 
 		response.on('error', function(e) {
-			console.log('--- DELETE_DB: unknown error');
-			console.error(e);
+			logger.error('--- DELETE_DB: ' + e);
 		});
 
         response.on('data', function(){
@@ -435,24 +599,23 @@ function delete_db() {
 
         response.on('end', function(){
             if (response.statusCode === 200) {
-                console.log('--- DELETE_DB: ' + config.db.name + ' has been deleted.');
+                logger.debug('--- DELETE_DB: ' + config.db.name + ' has been deleted.');
                 create_db();
             }
             else if (response.statusCode === 404) {
-                console.log('--- DELETE_DB: ' + config.db.name + ' does not exist.');
+                logger.debug('--- DELETE_DB: ' + config.db.name + ' does not exist.');
                 create_db();
             }
             else {
-                console.log('--- DELETE_DB: ', response.statusCode);
-                console.log('headers: ', response.headers);
+                logger.debug('--- DELETE_DB: ', response.statusCode);
+                logger.debug('headers: ', response.headers);
                 //console.log(JSON.stringify(opts));
             }
         })
 	});
 
     req.on('error', function(e){
-		console.log('CouchDB does not seem to be running!');
-		console.error(e);
+		logger.error('CouchDB does not seem to be running!' + e);
 	});
 
     req.end();
@@ -482,11 +645,10 @@ function create_db() {
         var opts = clone(optionsdb);
         opts.method = 'PUT';
         var req = db_protocol.request(opts, function(response) {
-            console.log('--- CREATE_DB: connected:');
+            logger.info('--- CREATE_DB: connected:');
 
             response.on('error', function(e) {
-                console.log('--- CREATE_DB: unknown error');
-                console.error(e);
+                logger.error('--- CREATE_DB: ' + e);
             });
 
             response.on('data', function(){
@@ -496,23 +658,22 @@ function create_db() {
             response.on('end', function(){
                 if (response.statusCode === 201) {
                   init_db();
-                  console.log('--- CREATE_DB: ' + config.db.name + ' has been created.');
+                  logger.debug('--- CREATE_DB: ' + config.db.name + ' has been created.');
                   load_orgs();
                 }
                 else if (response.statusCode === 412) {
-                    console.log('--- CREATE_DB: ' + config.db.name + ' already exists.');
+                    logger.debug('--- CREATE_DB: ' + config.db.name + ' already exists.');
                     load_orgs();
                 }
                 else {
-                    console.log('--- CREATE_DB: ', response.statusCode);
-                    console.log('headers: ', response.headers);
+                    logger.debug('--- CREATE_DB: ', response.statusCode);
+                    logger.debug('headers: ', response.headers);
                 }
             })
         });
 
         req.on('error', function(e){
-            console.log('CouchDB does not seem to be running!');
-            console.error(e);
+            logger.error('CouchDB does not seem to be running!' + e);
         });
 
         req.end();
@@ -560,7 +721,7 @@ function get_lastpolled(repo) {
                 var db = db_protocol.request(opts, handle_response);
                 db.write(JSON.stringify(doc));
                 db.end();
-                console.log('--- GET_LASTPOLLED: new date: ',doc.repofullname, doc.date);
+                logger.debug('--- GET_LASTPOLLED: new date: ',doc.repofullname, doc.date);
                 resolve(result);
             });
             res.on('error', function(e) {
@@ -588,7 +749,7 @@ function load_orgs() {
 				t.func = get_repos;
 				var org = item.name;
 				t.opts = clone(optionsgit);
-				t.opts.path = '/' + item.type + 's/' + org + '/repos?per_page=100';
+				t.opts.path = '/' + item.type + 's/' + org + '/repos?per_page=100' + '&access_token=' + gittoken + '&call=get_repos';
                 t.source = 'load_orgs';
 				//T.throttle(t);
                 throttle(t);
@@ -602,12 +763,12 @@ function load_orgs() {
                 Promise.resolve(get_lastpolled(repo)
                     .then (function (result) {
                         var since = '&since=' + result.date;
-                        var id = uuid.v4();
 
                         // get commits
                         if (config.collect_commits) {
                             t.func = get_commits;
-                            t.opts.path = '/repos/' + repo + '/commits?per_page=100' + since + '&access_token=' + gittoken + '&id=' + id + '&call=commits';
+                            t.opts.path = '/repos/' + repo + '/commits?per_page=100' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_commits';
+                            t.source = 'load_orgs';
                             //T.throttle(t);
                             throttle(t);
                             //console.log('--- LOAD ORGS: get_commits: ' + t.opts.path);
@@ -616,7 +777,7 @@ function load_orgs() {
                         // get pull requests
                         if (config.collect_pull_requests) {
                             s.func = get_pull_requests;
-                            s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + '&access_token=' + gittoken + '&id=' + id + '&call=pulls';
+                            s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_pulls';
                             s.source = 'load_orgs';
                             //T.throttle(s);
                             throttle(s);
@@ -627,7 +788,8 @@ function load_orgs() {
                         if (config.collect_stargazers) {
                             u.func = get_stargazers;
                             u.opts.method = 'GET';
-                            u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + '&access_token=' + gittoken + '&id=' + id + '&call=stars';  // event api does not offer a "since" atttribute
+                            u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_stargazers';  // event api does not offer a "since" atttribute
+                            u.source = 'load_orgs';
                             u.opts.headers = {
                                 'Accept': 'application/vnd.github.v3.star+json',
                                 'User-Agent': 'gitstats',
@@ -658,7 +820,7 @@ function print_help(){
 
 
 function initServer() {
-    console.log('Initializing gitstats microservice...');
+    logger.info('Initializing gitstats microservice...');
     var arg_deletedb  = process.argv.indexOf('--deletedb') != -1 ? true : false;
     var arg_help      = (process.argv.indexOf('-h') != -1) || (process.argv.indexOf('--help') != -1) ? true : false;
     var arg_collect   = (process.argv.indexOf('-c') != -1) || (process.argv.indexOf('--collect') != -1) ? true : false;
@@ -676,32 +838,23 @@ function initServer() {
     }
 }
 
-process.on('uncaughtException', function (er) {
-    console.log('---UNCAUGHT EXCEPTION: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>');
-    console.log('open requests: ' + openqueue.toString());
-    console.error(er.stack);
-    console.log('---UNCAUGHT EXCEPTION: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<');
-    if ((stack.length === 0) && (donequeue.length > 0)) {
-/*        donequeue.forEach(function(item) {
-            throttle(item);
-            console.log('--- REQUEUING: ', item.count, item.uuid);
-        })*/
-/*        stack = donequeue;
-        donequeue = []
-        process_queue();*/
-    } else if (stack.length === 0) {
-        clearInterval(timer);
-        timer = null;
-    } else {
-      process_queue();
-    }
+process.on('uncaughtException', function (e) {
+  logger.error('--- UNCAUGHT_EXCEPTION: ' + e);
+  clearInterval(timer);
+  timer = null;
+  if (takeabreather === null ) {
+      logger.warn('--- REQUEUING...');
+      stack = pendingqueue;
+      logger.warn('--- TAKING A BREATHER...' );
+      takeabreather = setTimeout(process_queue, 10000);
+  }
 });
 
 
 // set timer for hourly refresh
 setInterval(function () {
   create_db();
-  console.log('---: Refreshed data at: ' + Date.now());
+  logger.info('---: Refreshed data at: ' + Date.now());
 }, 3600000);
 
 
@@ -714,7 +867,7 @@ var server = http.createServer(handleRequest);
 
 server.listen(port, host, function(){
     initServer();
-    console.log('Server listening on:', host, port);
+    logger.info('Server listening on:', host, port);
 });
 
 /*
@@ -727,7 +880,10 @@ console.log('App started on port ' + port);
 
 // script for graceful shutdown
 process.on( 'SIGINT', function() {
-    console.log( '\nGracefully shutting down from SIGINT (Ctrl-C)' );
+    logger.error( openqueue );
+    logger.error( '\nGracefully shutting down from SIGINT (Ctrl-C)' );
+    logger.error( '\nPending queue:' );
+
     clearInterval(timer);
     timer = null;
     process.exit();

@@ -1,6 +1,4 @@
 [
-    {"name": "litong01/Object-Storage-for-Bluemix", "type": "repo", "category": "object-storage-for-bluemix"},
-    {"name": "iqbalmohomed/clampify", "type": "repo", "category": "clampify"},
     {"name": "apache/incubator-systemml", "type": "repo", "category": "systemml"},
     {"name": "node-red/node-red", "type": "repo", "category": "node-red"},
     {"name": "Brunel-Visualization/Brunel", "type": "repo", "category": "brunel-visualization"},
@@ -20,6 +18,8 @@
     {"name": "shmul/mule", "type": "repo", "category": "mule"},
     {"name": "ibmstorage/jcadf", "type": "repo", "category": ""},
     {"name": "djwillia/solo5", "type": "repo", "category": ""},
+    {"name": "quarks-edge/quarks", "type": "repo", "category": ""},
+    {"name": "jamiejennings/rosie-pattern-language", "type": "repo", "category": ""},
     {"name": "IBM-MIL/IBM-Ready-App-for-Banking", "type": "repo", "category": "ibm-ready-app-for-banking"},
     {"name": "IBM-MIL/IBM-Ready-App-for-Retail", "type": "repo", "category": "ibm-ready-app-for-retail"},
     {"name": "IBM-MIL/IBM-Ready-App-for-Healthcare", "type": "repo", "category": "ibm-ready-app-for-healthcare"},
@@ -39,7 +39,6 @@
     {"name": "cognitive-catalyst/qa-safe-strings", "type": "repo", "category": "cognitive-catalyst-qa-safe-strings"},
     {"name": "watson-developer-cloud/node-sdk", "type": "repo", "category": "watson-developer-cloud-node-sdk"},
     {"name": "watson-developer-cloud/speech-android-sdk", "type": "repo", "category": "watson-developer-cloud-speech-android-sdk"},
-    {"name": "watson-developer-cloud/speech-ios-sdk", "type": "repo", "category": "watson-developer-cloud-speech-ios-sdk"},
     {"name": "watson-developer-cloud/java-sdk", "type": "repo", "category": ""},
     {"name": "watson-developer-cloud/ios-sdk", "type": "repo", "category": ""},
     {"name": "watson-developer-cloud/unity-sdk", "type": "repo", "category": ""},
@@ -55,5 +54,7 @@
     {"name": "ibm-cds-labs/metrics-collector", "type": "repo", "category": ""},
     {"name": "ibm-cds-labs/metrics-analytics", "type": "repo", "category": ""},
     {"name": "ibm-security-innovation/libsecurity-go", "type": "repo", "category": "libsecurity"},
-    {"name": "ibm-security-innovation/crosscoap", "type": "repo", "category": "crosscoap"}
+    {"name": "ibm-security-innovation/crosscoap", "type": "repo", "category": "crosscoap"},
+    {"name": "ibm-security-innovation/goldy", "type": "repo", "category": ""},
+    {"name": "ibm-security-innovation/menagerie", "type": "repo", "category": ""}
 ]
