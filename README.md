@@ -30,7 +30,7 @@ Open `config.js` in a text editor and update as described below:
 'collect_pull_requests': true,      [true or false]
 'collect_stargazers': true,         [true or false]
 'interval_git': 1000,               [github processing interval in milliseconds
-                                     anything faster than 1000ms may cause GitHub to flag 
+                                     anything faster than 1000ms may cause GitHub to flag
                                      your account for rate-limit violations]
 'interval_db': 100,                 [database processing interval in milliseconds
                                      anything faster than 100ms my cause timeouts

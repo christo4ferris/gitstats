@@ -292,10 +292,9 @@ function get_stargazers(response) {
     });
     response.on('end', function() {
         var parsed = JSON.parse(body);
-        var doc = {};
         parsed.forEach(function (item) {
             try {
-                var doc   = {};
+                var doc = {};
                 // create a sha digest to be used as the docid
                 var shasum = crypto.createHash('sha1');
                 //shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
@@ -428,7 +427,7 @@ function get_commits(response) {
 		}
 		get_more(response, get_commits);
 		response.on('error', function(e) {
-            logger.error('--- GET_COMMITS: GET_MORE ERROR: ' + response.req.path);
+            logger.error('--- GET_COMMITS: GET_MORE ERROR: ', response.req.path, e.statusCode, e.message);
 		});
 		response.on('data', function(d) {
 			body += d;
@@ -494,8 +493,7 @@ function get_repos(response) {
 	}
 	get_more(response, get_repos);
 	response.on('error', function(e) {
-		logger.error('--- GET_REPOS: ERROR1: ' + response.req.path);
-        logger.error('--- GET_REPOS: ERROR2: ' + response.socket._httpMessage.path);
+		logger.error('--- GET_REPOS: ERROR: ' + response.req.path, e.statusCode, e.message);
 	});
 	response.on('data', function(d) {
 		body += d;
@@ -696,7 +694,7 @@ function get_lastpolled(repo) {
                         logger.error('--- GET_LASTPOLLED: ERROR: ' + response.req.path + ' ' + e);
                     });
 
-                    response.on('data', function(d) {
+                    response.on('data', function() {
                         // we don't care about data here, but have to listen for it.
                     });
 
