@@ -29,8 +29,12 @@ Open `config.js` in a text editor and update as described below:
 'collect_commits': true,            [true or false]
 'collect_pull_requests': true,      [true or false]
 'collect_stargazers': true,         [true or false]
-'interval': 1000,                   [github processing interval in milliseconds
-                                     DO NOT set this value below 720]
+'interval_git': 1000,               [github processing interval in milliseconds
+                                     anything faster than 1000ms may cause GitHub to flag 
+                                     your account for rate-limit violations]
+'interval_db': 100,                 [database processing interval in milliseconds
+                                     anything faster than 100ms my cause timeouts
+                                     when using a remote database
 'port': 80,                         [gitstats application port]
 'host': 'localhost',                [gitstats application host]
 'db': {                             [this section is for NoSQL db]

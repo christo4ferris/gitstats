@@ -14,14 +14,18 @@ var gittoken          = config.git.personaltoken;
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
 //var git_protocol      = config.git.protocol === 'https:' ? https : http;
 var timer             = null;
-var takeabreather     = null;
+var timer_db          = null;
 var counter           = 0;
+var counter_db        = 0;
+var processed_count   = 0;
+var processed_count_db= 0;
 var stack             = [];
+var stack_db          = [];
 var openqueue         = [];
 var openqueue_db      = [];
 var pendingqueue      = [];
 var pendingqueue_db   = [];
-var processed_count   = 0;
+
 
 // initialize IBM BlueMix
 //var bluemix           = require('ibmbluemix');
@@ -93,12 +97,14 @@ Date.prototype.getWeekNo = function(){
 
 
 function handle_response(response) {
+    var body = '';
 	response.on('error', function(e) {
 		logger.error('--- HANDLE_RESPONSE: ERROR: ', response.req.path, e);
 	});
 
-    response.on('data', function() {
+    response.on('data', function(d) {
         // we don't care about data here, but have to listen for it.
+        body += d;
     });
 
 	response.on('end', function() {
@@ -119,25 +125,22 @@ function handle_response(response) {
                 logger.warn('--- HANDLE_RESPONSE:', response.statusCode);
                 break;
         }
+      
+        var index = openqueue_db.indexOf(response.req.path);
+        logger.debug('--- HANDLE_RESPONSE: ENDED, path: ' + response.req.path + ' INDEX: ' + index);
+        if( index > -1) {
+            openqueue_db.splice(index,1);
+            pendingqueue_db.splice(index,1);
+        }
 	})
 }
 
 
 function process_queue() {
-        // clear timer if we are taking a breather...
-/*        if (takeabreather != null) {
-            clearInterval(timer);
-            timer = null;
-            logger.info('PROCESS_QUEUE: waiting to catch our breath...');
-            return false;
-        }*/
-
         var item          = stack.shift();
         var req_protocol  = item.opts.protocol === 'https:' ? https : http;
         var r             = item.opts.path.split('/');
 
-        clearInterval(takeabreather);
-        takeabreather = null;
         if (!item.hasOwnProperty('source')) item.source = 'other';
         logger.info('PROCESS_QUEUE:',
                     'PROCESSING: ' + item.counter,
@@ -157,20 +160,10 @@ function process_queue() {
             req.end();
         });
 
-/*        req.setTimeout(2000, function(){
-            logger.warn('--- TIMEOUT', item.counter, item.opts.path);
-            req.end();
-        });
-*/
         req.end(function(){
           processed_count = processed_count + 1;
           logger.debug('PROCESS_QUEUE: ENDING:       ', item.counter, item.opts.path);
         })
-
-        // reset the timer if resuming from an exception...
-        if ((timer === null) && (stack.length > 0)) {
-            timer = setInterval(process_queue, config.interval);
-        }
   
         // clear timer if there is no work left to do...
         if (stack.length === 0) {
@@ -182,46 +175,45 @@ function process_queue() {
 
 
 function process_queue_db() {
-        var item          = stack.shift();
+        var item          = stack_db.shift();
         var req_protocol  = item.opts.protocol === 'https:' ? https : http;
-        var r             = item.opts.path.split('/');
+        var doc = clone(item);
 
-        clearInterval(takeabreather);
-        takeabreather = null;
         if (!item.hasOwnProperty('source')) item.source = 'other';
-        logger.info('PROCESS_QUEUE:',
+        logger.info('PROCESS_QUEUE_DB:',
                     'PROCESSING: ' + item.counter,
-                    ' STACK: ' + stack.length,
-                    ' PENDING: ' + pendingqueue.length,
-                    ' COMPLETED: ' + processed_count,
+                    ' STACK: ' + stack_db.length,
+                    ' PENDING: ' + pendingqueue_db.length,
+                    ' COMPLETED: ' + processed_count_db,
                     item.func.name,
                     Array(21-item.func.name.length).join(' '),item.source,
-                    Array(10-item.source.length).join(' '),
-                    r[1] === 'repositories' ? 'repo ID: ' + r[2] : r[2] + '/' + r[3],
-                   item.opts.path);
+                    Array(20-item.source.length).join(' '),
+                    item.opts.path);
 
         var req = req_protocol.request(item.opts, item.func);
 
+        // don't persist opts info to the db
+        doc.opts = null;
+
+        // save the item to persistent storage
+        req.write(JSON.stringify(doc));
+
         req.on('error', function(e) {
-            logger.error('--- PROCESS_QUEUE: ERROR: ' + e);
+            logger.error('--- PROCESS_QUEUE_DB: ERROR: ' + e);
             req.end();
         });
 
         req.end(function(){
-          processed_count = processed_count + 1;
-          logger.debug('PROCESS_QUEUE: ENDING:       ', item.counter, item.opts.path);
+          processed_count_db = processed_count_db + 1;
+          logger.debug('PROCESS_QUEUE_DB: ENDING:       ', item.counter, item.opts.path);
         })
 
-        // reset the timer if resuming from an exception...
-        if ((timer === null) && (stack.length > 0)) {
-            timer = setInterval(process_queue, config.interval);
-        }
 
         // clear timer if there is no work left to do...
-        if (stack.length === 0) {
-            clearInterval(timer);
-            timer = null;
-            logger.info('PROCESS_QUEUE: queue is empty');
+        if (stack_db.length === 0) {
+            clearInterval(timer_db);
+            timer_db = null;
+            logger.info('PROCESS_QUEUE_DB: queue is empty');
         }
 }
 
@@ -233,16 +225,19 @@ function throttle(item) {
     openqueue.push(item.opts.path);
     pendingqueue.push(item);
     if (timer === null) {
-      timer = setInterval(process_queue, config.interval);
+      timer = setInterval(process_queue, config.interval_git);
     }
 }
 
 function throttle_db(item) {
-    stack.push(item);
+    counter_db++;
+    item.counter = counter_db;
+    logger.debug('--- THROTTLE_DB: ', item.counter,item.opts.path);
+    stack_db.push(item);
     openqueue_db.push(item.opts.path);
     pendingqueue_db.push(item);
     if (timer_db === null) {
-      timer_db = setInterval(process_db_queue, config.interval);
+      timer_db = setInterval(process_queue_db, config.interval_db);
     }
 }
 
@@ -300,13 +295,16 @@ function get_stargazers(response) {
         var doc = {};
         parsed.forEach(function (item) {
             try {
-                var opts = clone(optionsdb);
+                var doc   = {};
                 // create a sha digest to be used as the docid
                 var shasum = crypto.createHash('sha1');
                 //shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
                 shasum.update(item.starred_at + item.user.login);
                 var digest = shasum.digest('hex');
-                opts.path += '/' + digest;
+                doc.opts = clone(optionsdb);
+                doc.opts.path += '/' + digest;
+                doc.source = 'get_stargazers';
+                doc.func = handle_response;
                 var r = response.socket._httpMessage.path.split('/');
                 doc.type = 'event';
                 doc.count = 1;
@@ -328,20 +326,15 @@ function get_stargazers(response) {
                 // elsewhere to ensure both fields are populated.
                 r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = (r[2] + '/' + r[3]).toLowerCase();
 
-                var db = db_protocol.request(opts, handle_response);
-                db.on('error', function(e) {
-                    logger.error('--- GET_STARGAZERS: DB ERROR: ' + response.req.path + ' ' + e);
-                    db.end();
-                });
-
-                db.write(JSON.stringify(doc));
-                db.end();
-                //console.log('GET_STARGAZERS: ', doc.date, doc.user, doc.user_id, opts.path);
+                throttle_db(doc);
             }
             catch (err) {
                 logger.error('GET_STARGAZERS: ERROR: ' + response.req.path, err)
             }
         });
+        // If we got this far, than the original http.clientrequest has been processed and we can remove it from
+        // the queues.  If the queues still have items when the stack is empty, the pendingqueue items are requeued
+        // to the stack
         logger.debug('--- GET_STARGAZERS: END: ', response.req.path);
         var index = openqueue.indexOf(response.req.path);
         if( index > -1) {
@@ -366,11 +359,13 @@ function get_pull_requests(response) {
 	});
 	response.on('end', function() {
 		var parsed = JSON.parse(body);
-		var doc = {};
 		parsed.forEach(function (item) {
 			try {
-                var opts = clone(optionsdb);
-				opts.path += '/' + item.head.sha;
+                var doc = {};
+                doc.opts = clone(optionsdb);
+				doc.opts.path += '/' + item.head.sha;
+                doc.source = 'get_pull_requests';
+                doc.func = handle_response;
 				var r = item.url.split('/');
 				doc.type = 'pull_request';
                 doc.name = item.name;
@@ -386,35 +381,23 @@ function get_pull_requests(response) {
 				var date = new Date(doc.date);
 				doc.week = date.getWeekNo();
 				doc.url = item.url;
-				var db = db_protocol.request(opts, handle_response);
-                db.on('error', function(e) {
-                    logger.error('--- GET_PULL_REQUESTS: DB ERROR: ' + response.req.path + ' ' + e);
-                    db.end();
-                });
-				db.write(JSON.stringify(doc));
-				db.end();
+
+                throttle_db(doc);
 
 				// account for pairing situations - opts.path needs to be different than above
 				if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
-                    opts.path += '-2';
+                    doc.opts.path += '-2';
 					doc.name = item.commit.author.name;
 					doc.email = item.commit.author.email;
-					var db2 = db_protocol.request(opts, handle_response);
-                    db2.on('error', function(e) {
-                        logger.error('--- GET_PULL_REQUESTS: DB ERROR: ' + response.req.path + ' ' + e);
-                        db2.end();
-                    });
-					db2.write(JSON.stringify(doc));
-					db2.end();
+					throttle_db(doc);
 				}
-				//console.log('--- GET_PULL_REQUESTS: ',doc.sha,doc.name);
 			}
 			catch (err) {
                 logger.error('--- GET_PULL_REQUESTS: ERROR: ' + response.req.path, err);
 			}
 		});
-        // If we got this far, than the http.clientrequest has been processed and we can remove it from the queues.
-        // If the queues still have items when the stack is empty, the pendingqueue items are requeued
+        // If we got this far, than the original http.clientrequest has been processed and we can remove it from
+        // the queues.  If the queues still have items when the stack is empty, the pendingqueue items are requeued
         // to the stack
         logger.debug('--- GET_PULL_REQUESTS: END: ', response.req.path);
         var index = openqueue.indexOf(response.req.path);
@@ -453,11 +436,14 @@ function get_commits(response) {
 
 		response.on('end', function() {
 			var parsed = JSON.parse(body);
-			var doc = {};
+
 			parsed.forEach(function (item) {
 				try {
-                    var opts = clone(optionsdb)
-					opts.path += '/' + item.sha;
+                    var doc = {};
+                    doc.opts = clone(optionsdb);
+					doc.opts.path += '/' + item.sha;
+                    doc.source = 'get_commits';
+                    doc.func = handle_response;
 					var r = item.url.split('/');
 					doc.type = 'commit';
                     doc.name = item.name;
@@ -474,29 +460,16 @@ function get_commits(response) {
 					date.setDate(doc.date);
 					doc.week = date.getWeekNo();
 					doc.url = item.url;
-					var db = db_protocol.request(opts, handle_response);
-                    db.on('error', function(e) {
-                        logger.error('--- GET_COMMITS: DB ERROR: ' + response.req.path + ' ' + e);
-                        db.end();
-                    });
-					db.write(JSON.stringify(doc));
-                    db.end();
+
+					throttle_db(doc);
 
 					// account for pairing situations - opts.path needs to be different than above
 					if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
-                    opts.path += '-2';
-
+                        doc.opts.path += '-2';
                         doc.name = item.commit.author.name;
 						doc.email = item.commit.author.email;
-						var db2 = db_protocol.request(opts, handle_response);
-                        db2.on('error', function(e) {
-                            logger.error('--- GET_COMMITS: DB ERROR: ' + response.req.path + ' ' + e);
-                            db2.end();
-                        });
-						db2.write(JSON.stringify(doc));
-						db2.end();
+                        throttle_db(doc);
 					}
-                    //logger.debug('--- GET_COMMITS: ', item.url);
 				}
 				catch (err) {
 					logger.error('--- GET_COMMITS: ERROR: ', response.req.path, err);
@@ -718,10 +691,23 @@ function get_lastpolled(repo) {
                 // update / create lastpolled doc
                 opts.method = 'PUT';
                 doc.date = new Date().toISOString();
-                var db = db_protocol.request(opts, handle_response);
+                var db = db_protocol.request(opts, function(response){
+                    response.on('error', function(e) {
+                        logger.error('--- GET_LASTPOLLED: ERROR: ' + response.req.path + ' ' + e);
+                    });
+
+                    response.on('data', function(d) {
+                        // we don't care about data here, but have to listen for it.
+                    });
+
+                    response.on('end', function() {
+                        //logger.debug('--- GET_LASTPOLLED:', response.statusCode);
+                    });
+                });
+
                 db.write(JSON.stringify(doc));
                 db.end();
-                logger.debug('--- GET_LASTPOLLED: new date: ',doc.repofullname, doc.date);
+                //logger.debug('--- GET_LASTPOLLED: new date: ',doc.repofullname, doc.date);
                 resolve(result);
             });
             res.on('error', function(e) {
@@ -839,15 +825,17 @@ function initServer() {
 }
 
 process.on('uncaughtException', function (e) {
-  logger.error('--- UNCAUGHT_EXCEPTION: ' + e);
+  logger.error('--- UNCAUGHT_EXCEPTION: ' + e.message + ' ' + e.stack);
   clearInterval(timer);
   timer = null;
-  if (takeabreather === null ) {
-      logger.warn('--- REQUEUING...');
-      stack = pendingqueue;
-      logger.warn('--- TAKING A BREATHER...' );
-      takeabreather = setTimeout(process_queue, 10000);
-  }
+  clearInterval(timer_db);
+  timer_db = null;
+
+  logger.warn('--- REQUEUING...');
+  stack = pendingqueue;
+  stack_db = pendingqueue_db;
+  timer = setInterval(process_queue, config.interval_git);
+  timer_db = setInterval(process_queue_db, config.interval_db);
 });
 
 
