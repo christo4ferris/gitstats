@@ -7,6 +7,10 @@ gitstats - analytics for Open Source
 
 # Usage
 ```
+NOTE: as of version 0.3.0, these options will be ignored.  Gitstats will automatically launch with the --deletedb option, 
+and will cycle once an hour during steady-state operations using the -c option.  The code to use these option is present,
+just commented out.
+
 node app.js [option]
 
 Options:
@@ -25,8 +29,12 @@ Open `config.js` in a text editor and update as described below:
 'collect_commits': true,            [true or false]
 'collect_pull_requests': true,      [true or false]
 'collect_stargazers': true,         [true or false]
-'interval': 1000,                   [github processing interval in milliseconds
-                                     DO NOT set this value below 720]
+'interval_git': 1000,               [github processing interval in milliseconds
+                                     anything faster than 1000ms may cause GitHub to flag
+                                     your account for rate-limit violations]
+'interval_db': 100,                 [database processing interval in milliseconds
+                                     anything faster than 100ms my cause timeouts
+                                     when using a remote database
 'port': 80,                         [gitstats application port]
 'host': 'localhost',                [gitstats application host]
 'db': {                             [this section is for NoSQL db]
@@ -43,12 +51,6 @@ Open `config.js` in a text editor and update as described below:
     'port': 443,
     'protocol': 'https:',
     'personaltoken': ''             [GitHub personal access token]
-},
-'bluemix' : {
-    'applicationId'     : '',       [BlueMix application id]
-    'applicationSecret' : '',       [BlueMix application secret]
-    'applicationRoute'  : '',       [BlueMix application route]
-    'session'           : ''        [session hash]
 }
 
 ```
@@ -70,10 +72,8 @@ long as you specify the correct `type`, as demonstrated below:
 ```
 
 ## Run the gitstats collector
-Run the collector with the `--deletedb` flag the first time.  You may run it with the `-c` flag thereafter.
-
-<strong>note:</strong> If you subsequently use the `--deletedb` flag, you will also need to reset the logstash 
-sequence path.  This is stored in a file located in the `\bin` directory of you logstash deployment, and will
+<strong>note:</strong> You will also need to reset the logstash sequence path each time the database is reset.  
+This is stored in a file located in the `\bin` directory of you logstash deployment, and will
 be named according to the value of the `sequence_path` attribute contained in `logstash-sample.conf`.
 
 ## Set up the middleware

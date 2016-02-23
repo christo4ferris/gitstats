@@ -1,10 +1,13 @@
 {
   "name": "gitstats",
-  "version": "0.0.3",
+  "version": "0.3.0",
   "license": "MIT",
   "description": "Gitstats",
   "dependencies": {
-    "jasmine-node": "^1.14.5"
+    "ibmbluemix": "^1.0.0",
+    "jasmine-node": "^1.14.5",
+    "uuid": "^2.0.1",
+    "winston": "^2.1.1"
   },
   "main": "app.js",
   "engines": {
@@ -15,7 +18,8 @@
     "url": "https://github.com/christo4ferris/gitstats"
   },
   "scripts": {
-    "test": "jasmine-node test/"
+    "test": "jasmine-node test/",
+    "start": "node app.js -c"
   },
   "devDependencies": {
     "gulp": "^3.9.0",

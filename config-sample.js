@@ -5,7 +5,12 @@ module.exports = {
     'collect_commits': true,
     'collect_pull_requests': true,
     'collect_stargazers': true,
-    'interval': 1000,
+    // anything faster than 1000ms may cause GitHub to flag your
+    // account for rate-limit violations
+    'interval_git': 1000,
+    // interval_db is service dependent; for Cloudant, anything
+    // faster than 100ms will cause request timeouts.
+    'interval_db': 100,
     'port': 80,
     'host': 'localhost',
     'db': {
@@ -21,11 +26,5 @@ module.exports = {
         'port': 443,
         'protocol': 'https:',
         'personaltoken': ''
-    },
-    'bluemix' : {
-        'applicationId'     : '',
-        'applicationSecret' : '',
-        'applicationRoute'  : '',
-        'session'           : ''
     }
 };
