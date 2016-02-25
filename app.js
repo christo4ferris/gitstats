@@ -10,6 +10,7 @@ var parse_link        = require('./src/parse_link');
 var config            = require('./config');
 var orgs              = require(config.orgsfile);
 var uuid              = require('uuid');
+var url               = require('url');
 var gittoken          = config.git.personaltoken;
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
 //var git_protocol      = config.git.protocol === 'https:' ? https : http;
@@ -34,8 +35,8 @@ var winston           = require('winston');
 var logger = new (winston.Logger)({
     transports: [
         new (winston.transports.Console)({level: 'info'}),
-        new (winston.transports.File)({ name: 'debug-file', filename: 'gitstats_debug.log', level: 'debug' }),
-        new (winston.transports.File)({ name: 'error-file', filename: 'gitstats_error.log', level: 'warn' })
+        new (winston.transports.File)({ name: 'debug-file', filename: 'gitstats_debug-' + config.db.name + '.log', level: 'debug' }),
+        new (winston.transports.File)({ name: 'error-file', filename: 'gitstats_error-' + config.db.name + '.log', level: 'warn' })
     ] ,
     filename:true,
     methodname:true,
@@ -44,8 +45,8 @@ var logger = new (winston.Logger)({
 });
 
 
-var port              = (process.env.VCAP_APP_PORT || 3000);
-var host              = (process.env.VCAP_APP_HOST || 'localhost');
+var port              = (process.env.VCAP_APP_PORT || config.port);
+var host              = (process.env.VCAP_APP_HOST || config.host);
 
 var optionsdb = {
     keepAlive : true,
@@ -297,7 +298,7 @@ function get_stargazers(response) {
                 var doc = {};
                 // create a sha digest to be used as the docid
                 var shasum = crypto.createHash('sha1');
-                //shasum.update(response.socket._httpMessage.path + item.starred_at + item.user.login);
+                //shasum.update(response.req.path + item.starred_at + item.user.login);
                 shasum.update(item.starred_at + item.user.login);
                 var digest = shasum.digest('hex');
                 doc.opts = clone(optionsdb);
@@ -308,11 +309,11 @@ function get_stargazers(response) {
                 doc.type = 'event';
                 doc.count = 1;
                 doc.event = 'stargazer';
-                doc.date = item.starred_at
                 doc.login = item.user.login;
                 doc.login_id = item.user.id;
-                var date = new Date(doc.date);
-                doc.week = date.getWeekNo();
+                doc.date = item.starred_at
+                var eventdate = new Date(doc.date);
+                doc.week = eventdate.getWeekNo();
                 doc.url = item.url;
                 // Get the repo full name, or the repo ID
                 // The response body for events does not contain the name or ID of the
@@ -325,7 +326,13 @@ function get_stargazers(response) {
                 // elsewhere to ensure both fields are populated.
                 r[1] === 'repositories' ? doc.repo_id = r[2] : doc.repofullname = (r[2] + '/' + r[3]).toLowerCase();
 
-                throttle_db(doc);
+                // NOTE: the GitHub "stargazers" enpoint does not support a "since" query atttribute, so this
+                // implements a workaround; we still have to query all stargazers, but if
+                // this document is older than the last sync, don't bother trying to store it
+                var lastsyncdate = new Date(url.parse(response.req.path, true).query.since);
+                if (eventdate > lastsyncdate) {
+                  throttle_db(doc)
+                }
             }
             catch (err) {
                 logger.error('GET_STARGAZERS: ERROR: ' + response.req.path, err)
@@ -374,21 +381,25 @@ function get_pull_requests(response) {
 				doc.sha = item.head.sha;
 				doc.number = item.number;
 				doc.state = item.state;
-				doc.date = item.created_at;
 				doc.commits = item.commits_url;
 				doc.login = item.user.login;
-				var date = new Date(doc.date);
-				doc.week = date.getWeekNo();
+                doc.date = item.created_at;
+                var eventdate = new Date(doc.date);
+				doc.week = eventdate.getWeekNo();
 				doc.url = item.url;
-
-                throttle_db(doc);
+                // NOTE: the GitHub "pulls" endpoint does not support a "since" query atttribute, so this
+                // implements a workaround; we still have to query all stargazers, but if
+                // this document is older than the last sync, don't bother trying to store it
+                var lastsyncdate = new Date(url.parse(response.req.path, true).query.since);
+                var isnew = (eventdate > lastsyncdate) ? true : false;
+                if (isnew) throttle_db(doc);
 
 				// account for pairing situations - opts.path needs to be different than above
 				if (has(item.commit, 'author') && item.commit.committer.name != item.commit.author.name) {
                     doc.opts.path += '-2';
 					doc.name = item.commit.author.name;
 					doc.email = item.commit.author.email;
-					throttle_db(doc);
+					if (isnew) throttle_db(doc);
 				}
 			}
 			catch (err) {
@@ -499,53 +510,54 @@ function get_repos(response) {
 		body += d;
 	});
 	response.on('end', function() {
-		var parsed = JSON.parse(body);
-		parsed.forEach(function (item) {
-			logger.debug('--- GET_REPOS: processing: ' + item.full_name);
-			var t = new Object();
-            var s = new Object();
-            var u = new Object();
-			var r = item.full_name.split('/');
-			t.opts = clone(optionsgit);
-            s.opts = clone(optionsgit);
-            u.opts = clone(optionsgit);
+        var parsed = JSON.parse(body);
+        parsed.forEach(function (item) {
+            // create or update the 'last polled' pointer for each repo
+            Promise.resolve(get_lastpolled(item.full_name)
+            .then (function (result) {
+                var since = '&since=' + result.date;
+                logger.debug('--- GET_REPOS: processing: ' + item.full_name);                
+                var r = item.full_name.split('/');
 
-			// get commits
-            if (config.collect_commits) {
-                  t.func = get_commits;
-                  t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100' + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_commits';
-                  t.source = 'get_repos';
-                  //T.throttle(t);
-                  throttle(t);
-                  //console.log('--- GET_REPOS: get_commits: ' + t.opts.path);
-            }
+                // get commits
+                if (config.collect_commits) {
+                      var t = new Object();
+                      t.func = get_commits;
+                      t.opts = clone(optionsgit);
+                      t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_commits';
+                      t.source = 'get_repos';
+                      throttle(t);
+                }
 
-			// get pull requests
-			if (config.collect_pull_requests) {
-                  s.func = get_pull_requests;
-                  s.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all' + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_pull_requests';
-                  s.source = 'get_repos';
-                  //T.throttle(s);
-                  throttle(s);
-                  //console.log('--- GET REPOS: get_pull_requests: ' + s.opts.path);
-			}
+                // get pull requests
+                // NOTE: GitHub "pulls" endpoint does not support a "since" query atttribute, so we implement a workaround
+                if (config.collect_pull_requests) {
+                      var s = new Object();
+                      s.func = get_pull_requests;
+                      s.opts = clone(optionsgit);
+                      s.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_pull_requests';
+                      s.source = 'get_repos';
+                      throttle(s);
+                }
 
-            // get stargazers
-            if (config.collect_stargazers) {
-                u.func = get_stargazers;
-                u.opts.method = 'GET';
-                u.opts.path = '/repos/' + r[0] + '/' + r[1] + '/stargazers?per_page=100' + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_stargazerss';  // event api does not offer a "since" atttribute
-                u.source = 'get_repos';
-                u.opts.headers = {
-                    'Accept': 'application/vnd.github.v3.star+json',
-                    'User-Agent': 'gitstats',
-                    'Content-Type': 'application/json'
-                };  // see https://developer.github.com/v3/activity/starring
-                //T.throttle(u);
-                throttle(u);
-                //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);
-            }
-		});
+                // get stargazers
+                // NOTE: GitHub "stargazers" endpoint does not support a "since" query atttribute, so we implement a workaround
+                if (config.collect_stargazers) {
+                    var u = new Object();
+                    u.func = get_stargazers;
+                    u.opts = clone(optionsgit);
+                    u.opts.method = 'GET';
+                    u.opts.path = '/repos/' + r[0] + '/' + r[1] + '/stargazers?per_page=100' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_stargazerss';
+                    u.source = 'get_repos';
+                    u.opts.headers = {
+                        'Accept': 'application/vnd.github.v3.star+json',
+                        'User-Agent': 'gitstats',
+                        'Content-Type': 'application/json'
+                    };  // see https://developer.github.com/v3/activity/starring
+                    throttle(u);
+                }
+            }))
+        });
         var index = openqueue.indexOf(response.req.path);
         if( index > -1) {
             openqueue.splice(index,1);
@@ -677,8 +689,6 @@ function get_lastpolled(repo) {
                     doc = JSON.parse(chunk);
                     //console.log('--- GET_LASTPOLLED: old date: ',doc.repofullname, doc.date);
                     result.date = doc.date;
-                    result.create_webhook = false;
-
                 } else {
                     // create the lastpolled document
                     //console.log('--- GET_LASTPOLLED: creating: ',repo);
@@ -739,7 +749,7 @@ function load_orgs() {
                 throttle(t);
 			}
 
-			// if this is a repo, queue up requests for commits and pull_requests
+			// if this is a repo, queue up requests for commits, pull requests, and stargazers
 			else if (item.type == 'repo') {
 				var repo = item.name;
 
@@ -770,9 +780,11 @@ function load_orgs() {
 
                         // get stargazers
                         if (config.collect_stargazers) {
+                            // NOTE: GitHub event api does not offer a "since" atttribute, but get_stargazers 
+                            // implements a workaround so 'since' is still included in the querystring.
                             u.func = get_stargazers;
                             u.opts.method = 'GET';
-                            u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_stargazers';  // event api does not offer a "since" atttribute
+                            u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_stargazers';
                             u.source = 'load_orgs';
                             u.opts.headers = {
                                 'Accept': 'application/vnd.github.v3.star+json',
