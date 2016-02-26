@@ -4,18 +4,17 @@ var has               = require('./src/has');
 var clone             = require('./src/clone');
 var http              = require('http');
 var https             = require('https');
-//var Throttler       = require('./src/throttle');
 var parse_link        = require('./src/parse_link');
-//var handle_response   = require('./src/handle_response');
 var config            = require('./config');
 var orgs              = require(config.orgsfile);
 var uuid              = require('uuid');
 var url               = require('url');
+var winston           = require('winston');
 var gittoken          = config.git.personaltoken;
 var db_protocol       = config.db.protocol === 'https:' ? https : http;
-//var git_protocol      = config.git.protocol === 'https:' ? https : http;
 var timer             = null;
 var timer_db          = null;
+var monitor           = null;
 var counter           = 0;
 var counter_db        = 0;
 var processed_count   = 0;
@@ -26,12 +25,10 @@ var openqueue         = [];
 var openqueue_db      = [];
 var pendingqueue      = [];
 var pendingqueue_db   = [];
+var repos             = [];
 
 
-// initialize IBM BlueMix
-//var bluemix           = require('ibmbluemix');
-var winston           = require('winston');
-
+// initialize logger
 var logger = new (winston.Logger)({
     transports: [
         new (winston.transports.Console)({level: 'info'}),
@@ -45,12 +42,11 @@ var logger = new (winston.Logger)({
 });
 
 
-var port              = (process.env.VCAP_APP_PORT || config.port);
-var host              = (process.env.VCAP_APP_HOST || config.host);
+var port  = (process.env.VCAP_APP_PORT || config.port);
+var host  = (process.env.VCAP_APP_HOST || config.host);
 
 var optionsdb = {
     keepAlive : true,
-    agent: db_keepAliveAgent,
 	path: '/' + config.db.name,
 	host: config.db.host,
 	port: config.db.port,
@@ -80,13 +76,6 @@ var optionsgit = {
         'Content-Type': 'application/json'
     }
 };
-
-var db_keepAliveAgent = new db_protocol.Agent(optionsdb);
-//var git_keepAliveAgent = new git_protocol.Agent(optionsgit);
-
-//var T               = new Throttler(config);
-
-
 
 
 Date.prototype.getWeekNo = function(){
@@ -128,11 +117,11 @@ function handle_response(response) {
         }
       
         var index = openqueue_db.indexOf(response.req.path);
-        logger.debug('--- HANDLE_RESPONSE: ENDED, path: ' + response.req.path + ' INDEX: ' + index);
         if( index > -1) {
             openqueue_db.splice(index,1);
             pendingqueue_db.splice(index,1);
         }
+        logger.debug('--- HANDLE_RESPONSE: ENDED, path: ' + response.req.path + ' INDEX: ' + index + ' PENDING: ' + pendingqueue_db.length);
 	})
 }
 
@@ -495,76 +484,6 @@ function get_commits(response) {
 	}
 }
 
-function get_repos(response) {
-	var body = '';
-  logger.debug('--- GET_REPOS: ');
-	if (response.statusCode != 200) { 
-		logger.warn('--- GET_REPOS: HTTP: ' + response.statusCode, response.headers.status, response.req.path);
-		return; 
-	}
-	get_more(response, get_repos);
-	response.on('error', function(e) {
-		logger.error('--- GET_REPOS: ERROR: ' + response.req.path, e.statusCode, e.message);
-	});
-	response.on('data', function(d) {
-		body += d;
-	});
-	response.on('end', function() {
-        var parsed = JSON.parse(body);
-        parsed.forEach(function (item) {
-            // create or update the 'last polled' pointer for each repo
-            Promise.resolve(get_lastpolled(item.full_name)
-            .then (function (result) {
-                var since = '&since=' + result.date;
-                logger.debug('--- GET_REPOS: processing: ' + item.full_name);                
-                var r = item.full_name.split('/');
-
-                // get commits
-                if (config.collect_commits) {
-                      var t = new Object();
-                      t.func = get_commits;
-                      t.opts = clone(optionsgit);
-                      t.opts.path = '/repos/' + r[0] + '/' + r[1] + '/commits?per_page=100' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_commits';
-                      t.source = 'get_repos';
-                      throttle(t);
-                }
-
-                // get pull requests
-                // NOTE: GitHub "pulls" endpoint does not support a "since" query atttribute, so we implement a workaround
-                if (config.collect_pull_requests) {
-                      var s = new Object();
-                      s.func = get_pull_requests;
-                      s.opts = clone(optionsgit);
-                      s.opts.path = '/repos/' + r[0] + '/' + r[1] + '/pulls?per_page=100&state=all' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_pull_requests';
-                      s.source = 'get_repos';
-                      throttle(s);
-                }
-
-                // get stargazers
-                // NOTE: GitHub "stargazers" endpoint does not support a "since" query atttribute, so we implement a workaround
-                if (config.collect_stargazers) {
-                    var u = new Object();
-                    u.func = get_stargazers;
-                    u.opts = clone(optionsgit);
-                    u.opts.method = 'GET';
-                    u.opts.path = '/repos/' + r[0] + '/' + r[1] + '/stargazers?per_page=100' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_stargazerss';
-                    u.source = 'get_repos';
-                    u.opts.headers = {
-                        'Accept': 'application/vnd.github.v3.star+json',
-                        'User-Agent': 'gitstats',
-                        'Content-Type': 'application/json'
-                    };  // see https://developer.github.com/v3/activity/starring
-                    throttle(u);
-                }
-            }))
-        });
-        var index = openqueue.indexOf(response.req.path);
-        if( index > -1) {
-            openqueue.splice(index,1);
-            pendingqueue.splice(index,1);
-        }
-	});
-}
 
 function delete_db() {
     var opts = clone(optionsdb);
@@ -623,7 +542,7 @@ function init_db() {
 }
 
 function create_db() {
-    if (stack.length === 0)
+    if ((stack.length === 0) && (stack_db.length === 0))
     {
         var opts = clone(optionsdb);
         opts.method = 'PUT';
@@ -728,80 +647,118 @@ function get_lastpolled(repo) {
     return deferred; // <--- happens IMMEDIATELY (object that promise listens on)
 }
 
+
+function fetch_git_data(item) {
+    //repos.forEach(function(item){
+        var repo = item.name;
+        logger.info('FETCH_GIT_DATA: PROCESSING: ',repo);
+        // create or update the 'last polled' pointer for each repo
+        Promise.resolve(get_lastpolled(repo)
+            .then (function (result) {
+                var since = '&since=' + result.date;
+
+                // get commits
+                if (config.collect_commits) {
+                    var t = new Object();
+                    t.func = get_commits;
+                    t.opts = clone(optionsgit);
+                    t.opts.path = '/repos/' + repo + '/commits?per_page=100' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_commits';
+                    t.source = 'load_orgs';
+                    throttle(t);
+                    //console.log('--- LOAD ORGS: get_commits: ' + t.opts.path);
+                }
+
+                // get pull requests
+                if (config.collect_pull_requests) {
+                    var s = new Object();
+                    s.func = get_pull_requests;
+                    s.opts = clone(optionsgit);
+                    s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_pulls';
+                    s.source = 'load_orgs';
+                    throttle(s);
+                    //console.log('--- LOAD ORGS: get_pull_requests: ' + s.opts.path);
+                }
+
+                // get stargazers
+                if (config.collect_stargazers) {
+                    // NOTE: GitHub event api does not offer a "since" atttribute, but get_stargazers 
+                    // implements a workaround so 'since' is still included in the querystring.
+                    var u = new Object();
+                    u.func = get_stargazers;
+                    u.opts = clone(optionsgit);
+                    u.opts.method = 'GET';
+                    u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_stargazers';
+                    u.source = 'load_orgs';
+                    u.opts.headers = {
+                        'Accept': 'application/vnd.github.v3.star+json',
+                        'User-Agent': 'gitstats',
+                        'Content-Type': 'application/json'
+                    };  // see https://developer.github.com/v3/activity/starring
+                    throttle(u);
+                    //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);
+                }
+            })
+            .catch(function (reason) {
+                throw new Error('FETCH_GIT_DATA: error: ', reason.response.statusCode, reason.error.message);
+            })
+        )
+    //})
+}
+
+
+function get_repos(response) {
+    var body = '';
+    logger.debug('--- GET_REPOS: ');
+	if (response.statusCode != 200) {
+		logger.warn('--- GET_REPOS: HTTP: ' + response.statusCode, response.headers.status, response.req.path);
+		return;
+	}
+	get_more(response, get_repos);
+	response.on('error', function(e) {
+		logger.error('--- GET_REPOS: ERROR: ' + response.req.path, e.statusCode, e.message);
+	});
+	response.on('data', function(d) {
+		body += d;
+	});
+	response.on('end', function() {
+        var parsed = JSON.parse(body);
+        parsed.forEach(function (item) {
+            var repo = {}
+            repo.name = item.full_name
+            repo.type = 'repo';
+            repos.push(repo);
+            logger.info('--- GET_REPOS: ', repo);
+        })
+	})
+}
+
+
+// resolve orgs into repos before processing
 function load_orgs() {
-	if (orgs.length >= 1) {
-		orgs.forEach(function(item) {
-			var t = new Object();
-			var s = new Object();
-            var u = new Object();
-			t.opts = clone(optionsgit);
-			s.opts = clone(optionsgit);
-            u.opts = clone(optionsgit);
+	if (orgs.length > 0) {
+        var org_list  = [];
+        orgs.forEach(function(item) {
+            (item.type === 'repo') ? repos.push(item) : org_list.push(item);
+        });
 
-			// if this is an 'org' or 'user', put it in the queue to enumerate into a repo
-			if((item.type === 'org') || (item.type === 'user'))  {
-				t.func = get_repos;
-				var org = item.name;
-				t.opts = clone(optionsgit);
-				t.opts.path = '/' + item.type + 's/' + org + '/repos?per_page=100' + '&access_token=' + gittoken + '&call=get_repos';
+        if (org_list.length > 0) {
+            org_list.forEach(function(item){
+                var t = new Object();
+                t.opts = clone(optionsgit);
+                t.func = get_repos;
+                var org = item.name;
+                t.opts = clone(optionsgit);
+                t.opts.path = '/' + item.type + 's/' + org + '/repos?per_page=100' + '&access_token=' + gittoken + '&call=get_repos';
                 t.source = 'load_orgs';
-				//T.throttle(t);
                 throttle(t);
-			}
-
-			// if this is a repo, queue up requests for commits, pull requests, and stargazers
-			else if (item.type == 'repo') {
-				var repo = item.name;
-
-				// create or update the 'last polled' pointer for each repo
-                Promise.resolve(get_lastpolled(repo)
-                    .then (function (result) {
-                        var since = '&since=' + result.date;
-
-                        // get commits
-                        if (config.collect_commits) {
-                            t.func = get_commits;
-                            t.opts.path = '/repos/' + repo + '/commits?per_page=100' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_commits';
-                            t.source = 'load_orgs';
-                            //T.throttle(t);
-                            throttle(t);
-                            //console.log('--- LOAD ORGS: get_commits: ' + t.opts.path);
-                        }
-
-                        // get pull requests
-                        if (config.collect_pull_requests) {
-                            s.func = get_pull_requests;
-                            s.opts.path = '/repos/' + repo + '/pulls?per_page=100&state=all' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_pulls';
-                            s.source = 'load_orgs';
-                            //T.throttle(s);
-                            throttle(s);
-                            //console.log('--- LOAD ORGS: get_pull_requests: ' + s.opts.path);
-                        }
-
-                        // get stargazers
-                        if (config.collect_stargazers) {
-                            // NOTE: GitHub event api does not offer a "since" atttribute, but get_stargazers 
-                            // implements a workaround so 'since' is still included in the querystring.
-                            u.func = get_stargazers;
-                            u.opts.method = 'GET';
-                            u.opts.path = '/repos/' + repo + '/stargazers?per_page=100' + since + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_stargazers';
-                            u.source = 'load_orgs';
-                            u.opts.headers = {
-                                'Accept': 'application/vnd.github.v3.star+json',
-                                'User-Agent': 'gitstats',
-                                'Content-Type': 'application/json'
-                            };  // see https://developer.github.com/v3/activity/starring
-                            //T.throttle(u);
-                            throttle(u);
-                            //console.log('--- LOAD ORGS: get_stargazers: ' + u.opts.path);
-                        }
-                    })
-                    .catch(function (reason) {
-                        throw new Error('LOAD_ORGS: error: ', reason.response.statusCode, reason.error.message);
-                    })
-                );
-			}
-		});
+            });
+        }
+        // start fetching data once the orgs have been enumerated
+        monitor = setInterval(function(){
+            if ((timer === null) && (timer_db === null) && (repos.length > 0)) {
+                fetch_git_data(repos.shift());
+            }
+        },2000);
 	}
 }
 
@@ -840,6 +797,8 @@ process.on('uncaughtException', function (e) {
   timer = null;
   clearInterval(timer_db);
   timer_db = null;
+  clearInterval(monitor);
+  monitor = null;
 
   logger.warn('--- REQUEUING...');
   stack = pendingqueue;
@@ -880,7 +839,6 @@ console.log('App started on port ' + port);
 process.on( 'SIGINT', function() {
     logger.error( openqueue );
     logger.error( '\nGracefully shutting down from SIGINT (Ctrl-C)' );
-    logger.error( '\nPending queue:' );
 
     clearInterval(timer);
     timer = null;
