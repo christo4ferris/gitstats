@@ -132,7 +132,7 @@ function process_queue() {
         var r             = item.opts.path.split('/');
 
         if (!item.hasOwnProperty('source')) item.source = 'other';
-        logger.info('PROCESS_QUEUE:',
+        logger.debug('PROCESS_QUEUE:',
                     'PROCESSING: ' + item.counter,
                     ' STACK: ' + stack.length,
                     ' PENDING: ' + pendingqueue.length,
@@ -159,7 +159,7 @@ function process_queue() {
         if (stack.length === 0) {
             clearInterval(timer);
             timer = null;
-            logger.info('PROCESS_QUEUE: queue is empty');
+            logger.debug('PROCESS_QUEUE: queue is empty');
         }
 }
 
@@ -170,7 +170,7 @@ function process_queue_db() {
         var doc = clone(item);
 
         if (!item.hasOwnProperty('source')) item.source = 'other';
-        logger.info('PROCESS_QUEUE_DB:',
+        logger.debug('PROCESS_QUEUE_DB:',
                     'PROCESSING: ' + item.counter,
                     ' STACK: ' + stack_db.length,
                     ' PENDING: ' + pendingqueue_db.length,
@@ -203,7 +203,7 @@ function process_queue_db() {
         if (stack_db.length === 0) {
             clearInterval(timer_db);
             timer_db = null;
-            logger.info('PROCESS_QUEUE_DB: queue is empty');
+            logger.debug('PROCESS_QUEUE_DB: queue is empty');
         }
 }
 
@@ -758,6 +758,7 @@ function load_orgs() {
             if ((timer === null) && (timer_db === null) && (repos.length > 0)) {
                 fetch_git_data(repos.shift());
             }
+            logger.info('Repo Q:', repos.length, 'GitHub Q:',stack.length, 'Cloudant Q:',stack_db.length);
         },2000);
 	}
 }
