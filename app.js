@@ -656,6 +656,7 @@ function fetch_git_data(item) {
         Promise.resolve(get_lastpolled(repo)
             .then (function (result) {
                 var since = '&since=' + result.date;
+                if (config.bypass_lastpolled) since = '&since=1970-01-01T00:00:00Z';
 
                 // get commits
                 if (config.collect_commits) {
