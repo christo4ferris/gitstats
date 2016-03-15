@@ -6,3 +6,5 @@ allcommits.json
 npm-debug.log
 coverage/
 logstash.conf
+*.log
+ibmorg*.json
