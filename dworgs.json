@@ -20,7 +20,7 @@
     {"name": "djwillia/solo5", "type": "repo", "category": ""},
     {"name": "quarks-edge/quarks", "type": "repo", "category": ""},
     {"name": "jamiejennings/rosie-pattern-language", "type": "repo", "category": ""},
-    {"name": "openblockchain/obc-peer", "type": "repo", "category": ""},
+    {"name": "hyperledger/fabric", "type": "repo", "category": ""},
     {"name": "openwhisk/openwhisk", "type": "repo", "category": ""},
     {"name": "ibm-research/iostash", "type": "repo", "category": ""},
     {"name": "aruniyengar/storage-client-library", "type": "repo", "category": ""},
