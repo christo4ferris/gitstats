@@ -2,6 +2,8 @@ commits.json
 node_modules
 reduce.json
 config.js
+config.js.dwo
+hyperledgerorg.json
 allcommits.json
 npm-debug.log
 coverage/

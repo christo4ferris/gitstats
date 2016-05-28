@@ -115,7 +115,7 @@ function handle_response(response) {
                 logger.warn('--- HANDLE_RESPONSE:', response.statusCode);
                 break;
         }
-      
+
         var index = openqueue_db.indexOf(response.req.path);
         if( index > -1) {
             openqueue_db.splice(index,1);
@@ -154,7 +154,7 @@ function process_queue() {
           processed_count = processed_count + 1;
           logger.debug('PROCESS_QUEUE: ENDING:       ', item.counter, item.opts.path);
         })
-  
+
         // clear timer if there is no work left to do...
         if (stack.length === 0) {
             clearInterval(timer);
@@ -198,7 +198,6 @@ function process_queue_db() {
           logger.debug('PROCESS_QUEUE_DB: ENDING:       ', item.counter, item.opts.path);
         })
 
-
         // clear timer if there is no work left to do...
         if (stack_db.length === 0) {
             clearInterval(timer_db);
@@ -206,7 +205,6 @@ function process_queue_db() {
             logger.debug('PROCESS_QUEUE_DB: queue is empty');
         }
 }
-
 
 function throttle(item) {
     counter++;
@@ -230,7 +228,6 @@ function throttle_db(item) {
       timer_db = setInterval(process_queue_db, config.interval_db);
     }
 }
-
 
 // this will process the link header (if present) and invoke the requested function if a next header is present
 function get_more(response, func) {
@@ -331,6 +328,63 @@ function get_stargazers(response) {
         // the queues.  If the queues still have items when the stack is empty, the pendingqueue items are requeued
         // to the stack
         logger.debug('--- GET_STARGAZERS: END: ', response.req.path);
+        var index = openqueue.indexOf(response.req.path);
+        if( index > -1) {
+            openqueue.splice(index,1);
+            pendingqueue.splice(index,1);
+        }
+    });
+}
+
+function get_forks(response) {
+    var body = '';
+    if (response.statusCode != 200) {
+        logger.error('--- GET_FORKS: HTTP: ' + response.statusCode, response.headers.status, response.req.path);
+        return;
+    }
+    get_more(response, get_forks);
+    response.on('error', function(e) {
+        logger.error('--- GET_FORKS: GET_MORE ERROR: ' + response.req.path, e);
+    });
+    response.on('data', function(d) {
+        body += d;
+    });
+    response.on('end', function() {
+        var parsed = JSON.parse(body);
+        parsed.forEach(function (item) {
+            try {
+                if (item.type == 'ForkEvent') {
+                  var doc = {};
+                  // create a sha digest to be used as the docid
+                  var shasum = crypto.createHash('sha1');
+                  //shasum.update(response.req.path + item.starred_at + item.user.login);
+                  shasum.update(item.created_at + item.actor.login);
+                  var digest = shasum.digest('hex');
+                  doc.opts = clone(optionsdb);
+                  doc.opts.path += '/' + digest;
+                  doc.source = 'get_forks';
+                  doc.func = handle_response;
+                  doc.type = 'event';
+                  doc.repofullname = item.repo.name;
+                  var s = item.repo.name.split("/");
+                  doc.org = s[0];
+                  doc.count = 1;
+                  doc.event = 'ForkEvent';
+                  doc.login = item.actor.login;
+                  doc.date = item.created_at
+                  var eventdate = new Date(doc.date);
+                  doc.week = eventdate.getWeekNo();
+                  throttle_db(doc)
+                }
+            }
+            catch (err) {
+                logger.error('GET_FORKS: ERROR: ' + response.req.path, err)
+            }
+        });
+        // If we got this far, than the original http.clientrequest has been processed and we can remove it from
+        // the queues.  If the queues still have items when the stack is empty, the pendingqueue items are requeued
+        // to the stack
+        logger.debug('--- GET_FORKS: END: ', response.req.path);
         var index = openqueue.indexOf(response.req.path);
         if( index > -1) {
             openqueue.splice(index,1);
@@ -669,6 +723,18 @@ function fetch_git_data(item) {
                     //console.log('--- LOAD ORGS: get_commits: ' + t.opts.path);
                 }
 
+                // get events
+                if (config.collect_forks) {
+                    var t = new Object();
+                    t.func = get_forks;
+                    t.opts = clone(optionsgit);
+                    //t.opts.path = '/repos/' + repo + '/events' + '&access_token=' + gittoken + '&id=' + uuid.v4() + '&call=get_forks';
+                    t.opts.path = '/repos/' + repo + '/events';
+                    t.source = 'load_orgs';
+                    throttle(t);
+                    //console.log('--- LOAD ORGS: get_commits: ' + t.opts.path);
+                }
+
                 // get pull requests
                 if (config.collect_pull_requests) {
                     var s = new Object();
@@ -682,7 +748,7 @@ function fetch_git_data(item) {
 
                 // get stargazers
                 if (config.collect_stargazers) {
-                    // NOTE: GitHub event api does not offer a "since" atttribute, but get_stargazers 
+                    // NOTE: GitHub event api does not offer a "since" atttribute, but get_stargazers
                     // implements a workaround so 'since' is still included in the querystring.
                     var u = new Object();
                     u.func = get_stargazers;
