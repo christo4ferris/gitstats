@@ -9,12 +9,12 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"analyze_wildcard\":true,\"query\":\"doc.type:(NOT 'lastpolled')\"}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"analyze_wildcard\":true,\"query\":\"doc.type:(NOT 'lastpolled')\"}},\"filter\":[]}"
       }
     }
   },
   {
-    "_id": "Contributors",
+    "_id": "DWO-Contributors",
     "_type": "visualization",
     "_source": {
       "title": "Contributors",
@@ -23,7 +23,7 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   },
@@ -37,7 +37,7 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   },
@@ -51,7 +51,7 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.type:pull_request\",\"analyze_wildcard\":true}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"query\":\"doc.type:pull_request\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   },
@@ -65,12 +65,12 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.event:stargazer\",\"analyze_wildcard\":true}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"query\":\"doc.event:stargazer\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   },
   {
-    "_id": "Commits",
+    "_id": "DWO-Commits",
     "_type": "visualization",
     "_source": {
       "title": "Commits",
@@ -79,7 +79,7 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   },
@@ -93,12 +93,12 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.event:stargazer\",\"analyze_wildcard\":true}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"query\":\"doc.event:stargazer\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   },
   {
-    "_id": "Commits-by-Month",
+    "_id": "DWO-Commits-by-Month",
     "_type": "visualization",
     "_source": {
       "title": "Commits by Month",
@@ -107,12 +107,12 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   },
   {
-    "_id": "Top-Committers",
+    "_id": "Top-DWO-Committers",
     "_type": "visualization",
     "_source": {
       "title": "Top Committers",
@@ -121,7 +121,7 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   },
@@ -135,7 +135,7 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   },
@@ -149,7 +149,7 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.type:(NOT \\\"lastpolled\\\")\",\"analyze_wildcard\":true}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"query\":\"doc.type:(NOT \\\"lastpolled\\\")\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   },
@@ -163,7 +163,7 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"query\":\"doc.type:commit\",\"analyze_wildcard\":true}},\"filter\":[]}"
       }
     }
   },
@@ -177,7 +177,7 @@
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"index\":\"dwopen\",\"query\":{\"query_string\":{\"analyze_wildcard\":true,\"query\":\"doc.event:\\\"stargazer\\\"\"}},\"filter\":[]}"
+        "searchSourceJSON": "{\"index\":\"dwostats*\",\"query\":{\"query_string\":{\"analyze_wildcard\":true,\"query\":\"doc.event:\\\"stargazer\\\"\"}},\"filter\":[]}"
       }
     }
   }
